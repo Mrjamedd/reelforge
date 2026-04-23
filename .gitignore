@@ -11,3 +11,4 @@ build/
 *.log
 venv/
 .venv/
+.playwright-cli/
