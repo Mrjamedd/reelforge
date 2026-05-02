@@ -36,12 +36,13 @@ class OAuthTokens:
 @dataclass
 class PublishPayload:
     """Normalized publish request passed to each provider."""
-    video_path: str          # local path or presigned URL
+    video_path: str          # public URL or provider-specific source reference
     title: str | None
     caption: str | None
     hashtags: list[str]
     privacy: str             # normalized: "public" | "private" | "unlisted" | "friends"
     scheduled_for: datetime | None = None
+    local_video_path: str | None = None
 
 
 @dataclass
@@ -162,7 +163,7 @@ class PlatformProvider(ABC):
         """
         raise NotImplementedError(
             f"{self.platform_name} does not support native scheduling. "
-            "Use the ReelForge scheduler instead."
+            "Use the ReelPush scheduler instead."
         )
 
     @abstractmethod
@@ -173,3 +174,18 @@ class PlatformProvider(ABC):
     ) -> PostStatus:
         """Poll the platform for the current status of a published post."""
         ...
+
+    @property
+    def supports_post_delete_test(self) -> bool:
+        """True when a provider can safely delete a test post through its API."""
+        return False
+
+    async def delete_post(
+        self,
+        account: PlatformAccount,
+        platform_post_id: str,
+    ) -> None:
+        """Delete a platform post. Providers opt in when the official API supports it."""
+        raise NotImplementedError(
+            f"{self.platform_name} does not support API post deletion."
+        )

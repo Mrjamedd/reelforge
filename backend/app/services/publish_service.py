@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.config import get_settings
 from app.models.models import (
     AuditLog,
     JobStatus,
@@ -24,6 +25,30 @@ from app.schemas.schemas import PublishJobCreate
 
 logger = get_logger("service.publish")
 
+REQUIRED_CREDENTIALS: dict[Platform, tuple[str, ...]] = {
+    Platform.YOUTUBE: ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"),
+    Platform.INSTAGRAM: ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"),
+    Platform.TIKTOK: ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"),
+}
+
+SETTINGS_CREDENTIAL_ATTRS: dict[str, str] = {
+    "YOUTUBE_CLIENT_ID": "youtube_client_id",
+    "YOUTUBE_CLIENT_SECRET": "youtube_client_secret",
+    "INSTAGRAM_APP_ID": "instagram_app_id",
+    "INSTAGRAM_APP_SECRET": "instagram_app_secret",
+    "TIKTOK_CLIENT_KEY": "tiktok_client_key",
+    "TIKTOK_CLIENT_SECRET": "tiktok_client_secret",
+}
+
+
+def _missing_credentials(platform: Platform) -> list[str]:
+    settings = get_settings()
+    return [
+        name
+        for name in REQUIRED_CREDENTIALS.get(platform, ())
+        if not getattr(settings, SETTINGS_CREDENTIAL_ATTRS[name], "")
+    ]
+
 
 class PublishService:
 
@@ -32,6 +57,8 @@ class PublishService:
         db: AsyncSession,
         job_in: PublishJobCreate,
         uploaded_by_id: uuid.UUID,
+        *,
+        enqueue: bool = True,
     ) -> PublishJob:
         """
         Create a PublishJob record and enqueue it for background processing.
@@ -41,14 +68,58 @@ class PublishService:
         upload = await db.get(Upload, job_in.upload_id)
         if not upload:
             raise ValueError(f"Upload {job_in.upload_id} not found.")
+        if upload.uploaded_by_id != uploaded_by_id:
+            raise ValueError("Upload does not belong to the current user.")
+
+        from app.providers.registry import get_provider
+        from app.services.oauth_service import OAuthService
+
+        provider = get_provider(job_in.platform)
+        missing_credentials = _missing_credentials(job_in.platform)
+        if missing_credentials or not provider.is_configured:
+            raise ValueError(
+                f"{provider.platform_name} credentials are not configured. "
+                f"Missing: {', '.join(missing_credentials or REQUIRED_CREDENTIALS.get(job_in.platform, ()))}. "
+                "Save credentials in Settings before publishing."
+            )
+
+        # Instagram requires a publicly accessible HTTPS URL - block early with a clear message.
+        if job_in.platform == Platform.INSTAGRAM:
+            from app.services.storage_providers import get_storage_provider
+
+            storage_provider = get_storage_provider()
+            if not storage_provider.is_publicly_accessible:
+                storage_errors = storage_provider.configuration_errors
+                raise ValueError(
+                    "Instagram publishing requires a public HTTPS media URL. "
+                    + " ".join(storage_errors)
+                )
 
         # Verify a connected account exists for this platform
-        account = await self._get_account(db, job_in.platform)
+        account = await self._get_account(db, job_in.platform, uploaded_by_id)
         if not account:
             raise ValueError(
-                f"No connected {job_in.platform.value} account. "
+                f"No connected {provider.platform_name} account. "
                 "Connect an account before publishing."
             )
+        health = (account.extra_data or {}).get("credential_health") if isinstance(account.extra_data, dict) else None
+        if isinstance(health, dict) and health.get("status") == "invalid":
+            raise ValueError(
+                f"{provider.platform_name} credentials are marked invalid. "
+                "Reconnect the account or update the saved credentials before publishing."
+            )
+        oauth_svc = OAuthService()
+        try:
+            account = await oauth_svc.ensure_fresh_token(db, account)
+        except Exception as exc:
+            if oauth_svc.is_credential_failure(exc):
+                await db.commit()
+            else:
+                await db.rollback()
+            raise ValueError(
+                f"{provider.platform_name} credentials could not be verified. "
+                "Reconnect the account or update the saved credentials before publishing."
+            ) from exc
 
         # Idempotency: prevent double-creating jobs for the same upload+platform
         # within the same scheduling window
@@ -88,8 +159,9 @@ class PublishService:
         await db.commit()
         await db.refresh(job)
 
-        # Dispatch to Celery
-        await self._enqueue(job)
+        # Dispatch to Celery unless the caller plans to execute inline.
+        if enqueue:
+            await self._enqueue(job)
         logger.info("publish_job_created", job_id=str(job.id), platform=job.platform)
         return job
 
@@ -148,9 +220,14 @@ class PublishService:
 
     # ─── Internal Helpers ─────────────────────────────────────────────────────
 
-    async def _get_account(self, db: AsyncSession, platform: Platform) -> PlatformAccount | None:
+    async def _get_account(
+        self, db: AsyncSession, platform: Platform, owner_id: uuid.UUID
+    ) -> PlatformAccount | None:
         result = await db.execute(
-            select(PlatformAccount).where(PlatformAccount.platform == platform)
+            select(PlatformAccount).where(
+                PlatformAccount.platform == platform,
+                PlatformAccount.owner_id == owner_id,
+            )
         )
         return result.scalar_one_or_none()
 

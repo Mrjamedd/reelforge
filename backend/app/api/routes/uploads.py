@@ -37,28 +37,49 @@ async def upload_video(
     except MediaValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Store original
-    storage_key = await media_svc.store_upload(file_bytes, file.filename or "upload.mp4")
-
-    # Extract metadata using a temp file (ffprobe needs a file path)
-    video_meta = {}
-    thumbnail_key = None
-
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+    suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name
 
+    video_meta = {}
+    source_meta = {}
+    validation_warnings = []
+    thumbnail_key = None
+    cleanup_metadata_path = None
+
     try:
-        video_meta = media_svc.extract_metadata(tmp_path)
+        source_meta = media_svc.extract_source_metadata(tmp_path)
+        validation_warnings = media_svc.short_form_compatibility_warnings(
+            source_meta,
+            file_size_bytes=validation["file_size_bytes"],
+        )
+        storage_key = await media_svc.store_upload_from_path(
+            tmp_path,
+            file.filename or "upload.mp4",
+        )
+        stored_video_path = media_svc.get_local_path(storage_key)
+        metadata_video_path = str(stored_video_path)
+        if media_svc.backend != "local":
+            cleanup_metadata_path = media_svc.normalize_for_short_form(tmp_path)
+            metadata_video_path = cleanup_metadata_path
+
+        normalized_validation = media_svc.validate_video_file(metadata_video_path)
+        validation.update(normalized_validation)
+        video_meta = media_svc.extract_metadata(metadata_video_path)
 
         # Generate thumbnail
-        thumb_tmp = tmp_path + "_thumb.jpg"
-        if media_svc.generate_thumbnail(tmp_path, thumb_tmp):
+        thumb_tmp = metadata_video_path + "_thumb.jpg"
+        if media_svc.generate_thumbnail(metadata_video_path, thumb_tmp):
             thumb_bytes = open(thumb_tmp, "rb").read()
             thumbnail_key = await media_svc.store_thumbnail(thumb_bytes, storage_key)
             os.unlink(thumb_tmp)
+    except MediaValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     finally:
         os.unlink(tmp_path)
+        if cleanup_metadata_path:
+            os.unlink(cleanup_metadata_path)
 
     # Persist Upload record
     upload = Upload(
@@ -70,6 +91,8 @@ async def upload_video(
         duration_seconds=video_meta.get("duration_seconds"),
         width=video_meta.get("width"),
         height=video_meta.get("height"),
+        source_metadata=source_meta,
+        validation_warnings=validation_warnings,
         uploaded_by_id=current_user.id,
     )
     db.add(upload)
@@ -84,10 +107,14 @@ async def list_uploads(
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    _: AdminUser = Depends(get_current_user),
+    current_user: AdminUser = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Upload).order_by(Upload.created_at.desc()).limit(limit).offset(offset)
+        select(Upload)
+        .where(Upload.uploaded_by_id == current_user.id)
+        .order_by(Upload.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 
@@ -96,10 +123,10 @@ async def list_uploads(
 async def get_upload(
     upload_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AdminUser = Depends(get_current_user),
+    current_user: AdminUser = Depends(get_current_user),
 ):
     import uuid
     upload = await db.get(Upload, uuid.UUID(upload_id))
-    if not upload:
+    if not upload or upload.uploaded_by_id != current_user.id:
         raise HTTPException(status_code=404, detail="Upload not found.")
     return upload

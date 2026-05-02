@@ -1,14 +1,14 @@
-# ReelForge 🎬
+# ReelPush 🎬
 
 A production-minded multi-platform short-form video publishing framework.
-Upload once → publish to TikTok, Instagram Reels, and YouTube Shorts from a single admin dashboard.
+Upload once → publish to TikTok, Instagram Reels, and YouTube Shorts from the local desktop app.
 
 ---
 
 ## Architecture Overview
 
 ```
-reelforge/
+reelpush/
 ├── backend/          # FastAPI application
 │   └── app/
 │       ├── api/      # HTTP route handlers
@@ -19,12 +19,7 @@ reelforge/
 │       ├── services/ # Business logic layer
 │       ├── providers/ # Platform adapter pattern (TikTok, Instagram, YouTube)
 │       └── workers/  # Celery background job handlers
-├── frontend/         # React SPA (Vite + TypeScript)
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       ├── hooks/
-│       └── lib/
+├── reelpush_desktop.py # Local desktop UI
 ├── infra/            # Docker, Nginx configs
 └── scripts/          # Dev/migration helpers
 ```
@@ -66,8 +61,8 @@ cp .env.example .env
 | `YOUTUBE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `ADMIN_EMAIL` | Initial admin account email |
 | `ADMIN_PASSWORD` | Initial admin account password |
-| `FRONTEND_URL` | Frontend base URL for OAuth redirects |
-| `API_URL` | Backend base URL |
+| `API_URL` | Backend base URL. Docker Compose exposes the local API at `http://localhost:8100`. |
+| `SQLALCHEMY_ECHO` | Optional SQL debug logging. Keep `false` unless actively debugging because SQL logs may include user identifiers. |
 
 ---
 
@@ -76,7 +71,6 @@ cp .env.example .env
 ### Prerequisites
 - Docker + Docker Compose
 - Python 3.11+
-- Node.js 18+
 
 ### Start everything
 
@@ -105,19 +99,55 @@ celery -A app.workers.celery_app worker --loglevel=info
 cd backend
 celery -A app.workers.celery_app beat --loglevel=info
 
-# 6. Frontend
-cd frontend
-npm install
-npm run dev
+# 6. Desktop app
+cd ..
+python3 reelpush_desktop.py
 ```
 
-### Or use Docker Compose for everything
+### Or use Docker Compose for local services
 
 ```bash
 docker-compose up --build
 ```
 
-Access the app at `http://localhost:3000`
+The supported UI is the local desktop app:
+
+```bash
+Open ReelPush.command
+```
+
+---
+
+## Desktop App
+
+ReelPush now includes a local desktop client as the primary interface.
+
+Open it with:
+
+```bash
+Open ReelPush.command
+```
+
+The desktop app:
+
+- starts the local backend services automatically
+- shows a login screen for the local admin account
+- separates `Publishing` and `Accounts`
+- saves title, caption, hashtags, privacy, and staged upload in the database
+- publishes directly from the desktop UI
+
+Advanced shell entrypoints still exist if you want them:
+
+- `./start-reelpush.sh`
+- `./publish-reelpush.sh`
+
+Saved publishing details now persist in the database, so title, caption, hashtags, and privacy survive app restarts for each admin user.
+
+Current limitations:
+
+- `YouTube` is the only fully automatic local-mode target in this scaffold
+- `Instagram` needs a publicly reachable video URL, so local filesystem storage is not enough by itself
+- `TikTok` still needs a real upload implementation plus approved app scopes
 
 ---
 
@@ -125,12 +155,12 @@ Access the app at `http://localhost:3000`
 
 Each platform uses OAuth 2.0. The flow:
 
-1. Admin clicks "Connect [Platform]" in the dashboard
+1. Admin clicks "Connect [Platform]" in the desktop app
 2. Backend generates an OAuth authorization URL and redirects the user
 3. Platform redirects back to `/api/oauth/[platform]/callback` with an auth code
 4. Backend exchanges the code for access + refresh tokens
 5. Tokens are stored encrypted in the database
-6. The platform shows as "Connected" in the dashboard
+6. The platform shows as "Connected" in the desktop app
 
 Token refresh is handled automatically before each publish job.
 
@@ -154,7 +184,7 @@ Token refresh is handled automatically before each publish job.
 | YouTube OAuth flow | ✅ Scaffolded (official Google API structure) — **pending Google credentials** |
 | YouTube Shorts publish | ✅ Scaffolded — **pending credentials** |
 | S3 storage | ✅ Scaffolded — **needs real AWS credentials** |
-| Frontend dashboard | ✅ Fully implemented |
+| Local desktop app | ✅ Fully implemented |
 
 ---
 
@@ -176,16 +206,17 @@ Token refresh is handled automatically before each publish job.
 - Create a project in Google Cloud Console at https://console.cloud.google.com
 - Enable the YouTube Data API v3
 - Create OAuth 2.0 credentials (Web Application type)
-- Add your redirect URI: `{API_URL}/api/oauth/youtube/callback`
+- Add your redirect URI: `{API_URL}/api/oauth/youtube/callback`. For the default desktop Docker setup, use `http://localhost:8100/api/oauth/youtube/callback`.
 - Set `YOUTUBE_CLIENT_ID` and `YOUTUBE_CLIENT_SECRET`
-- YouTube Shorts classification is automatic when video is vertical and under 60s
+- If Google shows `Error 400: redirect_uri_mismatch`, open ReelPush Settings and copy the displayed Google redirect URI. It must match the Google Cloud authorized redirect URI exactly, including `localhost` vs `127.0.0.1`, the port, path, scheme, and trailing slash.
+- YouTube Shorts classification depends on current YouTube rules. ReelPush validates and warns on source duration, orientation, and resolution before publishing.
 
 ---
 
 ## Future Expansion Points
 
 - **Multiple accounts per platform** — DB schema supports it (`platform_accounts` table has no unique constraint on platform alone); UI just needs a multi-account selector
-- **Analytics dashboard** — Add a `post_analytics` table; each provider's `getPostStatus()` can return view/like/comment counts
+- **Analytics view** — Add a `post_analytics` table; each provider's `getPostStatus()` can return view/like/comment counts
 - **Bulk caption variations** — Add a `caption_variants` table linked to uploads; let users A/B test captions per platform
 - **Additional platforms** — Implement `PinterestProvider` and `SnapchatProvider` following the same `PlatformProvider` interface in `providers/`
 - **Transcoding pipeline** — The `MediaService` has a `transcode()` stub; plug in `ffmpeg-python` jobs via Celery

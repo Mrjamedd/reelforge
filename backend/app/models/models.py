@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for ReelForge.
+SQLAlchemy ORM models for ReelPush.
 """
 
 import enum
@@ -24,6 +24,10 @@ from app.db.session import Base
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -53,6 +57,11 @@ class PrivacyLevel(str, enum.Enum):
     FRIENDS = "friends"  # TikTok
 
 
+platform_enum_type = Enum(Platform, name="platform", values_callable=enum_values)
+job_status_enum_type = Enum(JobStatus, name="jobstatus", values_callable=enum_values)
+privacy_level_enum_type = Enum(PrivacyLevel, name="privacylevel", values_callable=enum_values)
+
+
 # ─── Admin User ───────────────────────────────────────────────────────────────
 
 
@@ -68,6 +77,14 @@ class AdminUser(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+    platform_accounts: Mapped[list["PlatformAccount"]] = relationship(back_populates="owner")
+    uploads: Mapped[list["Upload"]] = relationship(back_populates="uploaded_by")
+    publish_profile: Mapped["PublishProfile | None"] = relationship(
+        back_populates="admin_user", uselist=False
+    )
+    staged_publish: Mapped["StagedPublish | None"] = relationship(
+        back_populates="admin_user", uselist=False
+    )
 
 
 # ─── Platform Accounts ────────────────────────────────────────────────────────
@@ -78,15 +95,16 @@ class PlatformAccount(Base):
 
     __tablename__ = "platform_accounts"
     __table_args__ = (
-        # For now, one connected account per platform.
-        # Remove this constraint to support multiple accounts per platform.
-        UniqueConstraint("platform", name="uq_platform_account_one_per_platform"),
+        UniqueConstraint("owner_id", "platform", name="uq_platform_account_owner_platform"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    platform: Mapped[Platform] = mapped_column(Enum(Platform), nullable=False, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False, index=True
+    )
+    platform: Mapped[Platform] = mapped_column(platform_enum_type, nullable=False, index=True)
     platform_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     platform_username: Mapped[str | None] = mapped_column(String(255))
     access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
@@ -102,6 +120,62 @@ class PlatformAccount(Base):
     )
 
     publish_jobs: Mapped[list["PublishJob"]] = relationship(back_populates="platform_account")
+    owner: Mapped["AdminUser"] = relationship(back_populates="platform_accounts")
+
+
+class PublishProfile(Base):
+    """Persistent default publishing details for a specific admin user."""
+
+    __tablename__ = "publish_profiles"
+    __table_args__ = (UniqueConstraint("admin_user_id", name="uq_publish_profile_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    admin_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False, index=True
+    )
+    default_title: Mapped[str | None] = mapped_column(String(500))
+    default_caption: Mapped[str | None] = mapped_column(Text)
+    default_hashtags: Mapped[str | None] = mapped_column(Text)
+    default_privacy: Mapped[PrivacyLevel | None] = mapped_column(
+        privacy_level_enum_type, default=PrivacyLevel.PUBLIC
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    admin_user: Mapped["AdminUser"] = relationship(back_populates="publish_profile")
+
+
+class StagedPublish(Base):
+    """Current staged upload and selected platforms for terminal execution."""
+
+    __tablename__ = "staged_publishes"
+    __table_args__ = (UniqueConstraint("admin_user_id", name="uq_staged_publish_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    admin_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False, index=True
+    )
+    upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("uploads.id"), nullable=True, index=True
+    )
+    selected_platforms: Mapped[list[str] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    admin_user: Mapped["AdminUser"] = relationship(back_populates="staged_publish")
+    upload: Mapped["Upload | None"] = relationship()
 
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
@@ -123,6 +197,8 @@ class Upload(Base):
     duration_seconds: Mapped[float | None] = mapped_column()
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
+    source_metadata: Mapped[dict | None] = mapped_column(JSONB)
+    validation_warnings: Mapped[list[str] | None] = mapped_column(JSONB)
     uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False
     )
@@ -131,7 +207,7 @@ class Upload(Base):
     )
 
     publish_jobs: Mapped[list["PublishJob"]] = relationship(back_populates="upload")
-    uploaded_by: Mapped["AdminUser"] = relationship()
+    uploaded_by: Mapped["AdminUser"] = relationship(back_populates="uploads")
 
 
 # ─── Publish Job ──────────────────────────────────────────────────────────────
@@ -151,16 +227,16 @@ class PublishJob(Base):
     platform_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("platform_accounts.id"), nullable=False
     )
-    platform: Mapped[Platform] = mapped_column(Enum(Platform), nullable=False, index=True)
+    platform: Mapped[Platform] = mapped_column(platform_enum_type, nullable=False, index=True)
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus), default=JobStatus.QUEUED, nullable=False, index=True
+        job_status_enum_type, default=JobStatus.QUEUED, nullable=False, index=True
     )
 
     # Metadata for this specific platform post
     title: Mapped[str | None] = mapped_column(String(500))
     caption: Mapped[str | None] = mapped_column(Text)
     hashtags: Mapped[str | None] = mapped_column(Text)  # comma-separated
-    privacy: Mapped[PrivacyLevel | None] = mapped_column(Enum(PrivacyLevel))
+    privacy: Mapped[PrivacyLevel | None] = mapped_column(privacy_level_enum_type)
 
     # Scheduling
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # UTC
@@ -205,8 +281,8 @@ class AuditLog(Base):
     publish_job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("publish_jobs.id"), nullable=False, index=True
     )
-    from_status: Mapped[JobStatus | None] = mapped_column(Enum(JobStatus))
-    to_status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), nullable=False)
+    from_status: Mapped[JobStatus | None] = mapped_column(job_status_enum_type)
+    to_status: Mapped[JobStatus] = mapped_column(job_status_enum_type, nullable=False)
     message: Mapped[str | None] = mapped_column(Text)
     api_response_summary: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(

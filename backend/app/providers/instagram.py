@@ -177,6 +177,14 @@ class InstagramProvider(PlatformProvider):
             errors.append("Instagram caption must be 2200 characters or fewer.")
         if len(payload.hashtags) > 30:
             errors.append(f"Instagram allows max 30 hashtags (got {len(payload.hashtags)}).")
+        url = payload.video_path or ""
+        if not url.startswith("https://"):
+            errors.append(
+                "Instagram requires a publicly accessible HTTPS video URL. "
+                "Local storage URLs are not accepted. "
+                "Configure STORAGE_BACKEND=s3 with S3_BUCKET, AWS_ACCESS_KEY_ID, "
+                "and AWS_SECRET_ACCESS_KEY in .env (or use Cloudflare R2 via S3_ENDPOINT_URL)."
+            )
         return errors
 
     # ─── Publishing ───────────────────────────────────────────────────────────
