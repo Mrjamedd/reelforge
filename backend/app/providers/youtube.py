@@ -30,7 +30,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import get_effective_cred, get_settings
 from app.core.logging import get_logger
 from app.core.security import decrypt_token
 from app.models.models import PlatformAccount
@@ -67,7 +67,7 @@ class YouTubeProvider(PlatformProvider):
 
     @property
     def is_configured(self) -> bool:
-        return settings.youtube_configured
+        return bool(get_effective_cred("youtube_client_id") and get_effective_cred("youtube_client_secret"))
 
     @property
     def requires_app_review(self) -> bool:
@@ -83,7 +83,7 @@ class YouTubeProvider(PlatformProvider):
 
     def get_auth_url(self, redirect_uri: str, state: str) -> OAuthConfig:
         params = {
-            "client_id": settings.youtube_client_id,
+            "client_id": get_effective_cred("youtube_client_id"),
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": " ".join(REQUIRED_SCOPES),
@@ -100,8 +100,8 @@ class YouTubeProvider(PlatformProvider):
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
-                    "client_id": settings.youtube_client_id,
-                    "client_secret": settings.youtube_client_secret,
+                    "client_id": get_effective_cred("youtube_client_id"),
+                    "client_secret": get_effective_cred("youtube_client_secret"),
                     "code": code,
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri,
@@ -139,8 +139,8 @@ class YouTubeProvider(PlatformProvider):
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
-                    "client_id": settings.youtube_client_id,
-                    "client_secret": settings.youtube_client_secret,
+                    "client_id": get_effective_cred("youtube_client_id"),
+                    "client_secret": get_effective_cred("youtube_client_secret"),
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
                 },

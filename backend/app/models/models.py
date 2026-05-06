@@ -74,6 +74,7 @@ class AdminUser(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -83,6 +84,9 @@ class AdminUser(Base):
         back_populates="admin_user", uselist=False
     )
     staged_publish: Mapped["StagedPublish | None"] = relationship(
+        back_populates="admin_user", uselist=False
+    )
+    app_settings: Mapped["UserAppSettings | None"] = relationship(
         back_populates="admin_user", uselist=False
     )
 
@@ -290,3 +294,46 @@ class AuditLog(Base):
     )
 
     publish_job: Mapped["PublishJob"] = relationship(back_populates="audit_logs")
+
+
+# ─── Email Verification ───────────────────────────────────────────────────────
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(6), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+# ─── User App Settings ────────────────────────────────────────────────────────
+
+
+class UserAppSettings(Base):
+    """Per-user encrypted platform credentials (TikTok, YouTube, Instagram)."""
+
+    __tablename__ = "user_app_settings"
+    __table_args__ = (UniqueConstraint("admin_user_id", name="uq_user_app_settings_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    admin_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False, index=True
+    )
+    credentials_enc: Mapped[str | None] = mapped_column(Text)  # Fernet-encrypted JSON
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    admin_user: Mapped["AdminUser"] = relationship(back_populates="app_settings")

@@ -7,8 +7,6 @@ import mimetypes
 import os
 import queue
 import shutil
-import shlex
-import subprocess
 import sys
 import tempfile
 import threading
@@ -25,140 +23,6 @@ from tkinter import filedialog, messagebox, ttk
 
 
 APP_NAME = "ReelPush Studio"
-
-# macOS packaged apps launched from Finder do not inherit Terminal's PATH.
-# Build a predictable runtime environment before any Docker subprocess runs.
-DOCKER_APP_CANDIDATES = [
-    Path("/Applications/Docker.app"),
-    Path.home() / "Applications" / "Docker.app",
-    Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker" / "Docker" / "Docker Desktop.exe",
-    Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Docker" / "Docker Desktop.exe",
-]
-
-DOCKER_PATHS = [
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-    "/Applications/Docker.app/Contents/Resources/bin",
-    str(Path.home() / "Applications" / "Docker.app" / "Contents" / "Resources" / "bin"),
-]
-
-DOCKER_CHECK_CANDIDATES = [
-    "/usr/local/bin/docker",
-    "/opt/homebrew/bin/docker",
-    "/Applications/Docker.app/Contents/Resources/bin/docker",
-    "/Applications/Docker.app/Contents/Resources/bin/com.docker.cli",
-    str(Path.home() / "Applications" / "Docker.app" / "Contents" / "Resources" / "bin" / "docker"),
-    str(Path.home() / "Applications" / "Docker.app" / "Contents" / "Resources" / "bin" / "com.docker.cli"),
-    str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker" / "Docker" / "resources" / "bin" / "docker.exe"),
-    str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker" / "Docker" / "resources" / "bin" / "docker"),
-]
-
-
-def _runtime_env() -> dict[str, str]:
-    env = dict(os.environ)
-    existing_path = env.get("PATH", "")
-    path_parts = [path for path in DOCKER_PATHS if path]
-    if existing_path:
-        path_parts.append(existing_path)
-    env["PATH"] = os.pathsep.join(path_parts)
-    return env
-
-
-os.environ.update(_runtime_env())
-
-
-def _docker_executable() -> str:
-    env = _runtime_env()
-    docker_from_path = shutil.which("docker", path=env.get("PATH", ""))
-    docker_cli_from_path = shutil.which("com.docker.cli", path=env.get("PATH", ""))
-    candidates: list[str] = []
-    if docker_from_path:
-        candidates.append(docker_from_path)
-    if docker_cli_from_path and docker_cli_from_path not in candidates:
-        candidates.append(docker_cli_from_path)
-    candidates.extend(DOCKER_CHECK_CANDIDATES)
-
-    checked: list[str] = []
-    for candidate in candidates:
-        checked.append(candidate)
-        candidate_path = Path(candidate)
-        if candidate_path.exists() and os.access(candidate_path, os.X_OK):
-            return str(candidate_path)
-
-    checked_text = "\n".join(checked) if checked else env.get("PATH", "")
-    raise RuntimeError(
-        f"{_docker_install_message()}\n\n"
-        f"Checked:\n{checked_text}"
-    )
-
-
-def _docker_install_message() -> str:
-    platform_label = "Windows" if os.name == "nt" else "Mac" if sys.platform == "darwin" else "this computer"
-    return f"Docker Desktop was not found. Install Docker Desktop for {platform_label}, then reopen ReelPush Studio."
-
-
-def _docker_desktop_app() -> Path | None:
-    for app_path in DOCKER_APP_CANDIDATES:
-        if app_path.exists():
-            return app_path
-    return None
-
-
-def _docker_desktop_installed() -> bool:
-    return _docker_desktop_app() is not None
-
-
-def _open_docker_desktop() -> None:
-    app_path = _docker_desktop_app()
-    if sys.platform == "darwin" and app_path is not None:
-        subprocess.Popen(
-            ["/usr/bin/open", str(app_path)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    elif os.name == "nt" and app_path is not None:
-        subprocess.Popen(
-            [str(app_path)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-
-def _wait_for_docker_ready(timeout: int = 90) -> None:
-    docker = _docker_executable()
-    env = _runtime_env()
-    deadline = time.time() + timeout
-    last_error = ""
-
-    while time.time() < deadline:
-        try:
-            result = subprocess.run(
-                [docker, "info"],
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=10,
-                check=False,
-            )
-            if result.returncode == 0:
-                return
-            last_error = (result.stderr or result.stdout or "Docker is not ready yet.").strip()
-        except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)
-        time.sleep(2)
-
-    if _docker_desktop_installed():
-        raise RuntimeError(
-            "Docker Desktop is installed but not running or not ready yet. Open Docker Desktop, "
-            "wait until it finishes starting, then try again.\n\n"
-            f"Last Docker check: {last_error}"
-        )
-
-    raise RuntimeError(_docker_install_message())
 
 
 def _application_resource_root() -> Path:
@@ -180,10 +44,6 @@ def _application_resource_root() -> Path:
             Path.cwd(),
         ]
     )
-
-    for candidate in candidates:
-        if (candidate / "docker-compose.yml").exists() and (candidate / "backend").exists():
-            return candidate
 
     fallback = candidates[0] if candidates else Path(tempfile.gettempdir())
     return fallback
@@ -213,34 +73,28 @@ OAUTH_REDIRECT_URIS = {
 }
 
 
+def _set_active_api_url(url: str) -> None:
+    """Update API_BASE, API_ROOT, and OAUTH_REDIRECT_URIS to point at a new server URL."""
+    global API_BASE, API_ROOT
+    API_BASE = _api_base_for_url(url)
+    API_ROOT = API_BASE[:-4]
+    for platform in ("youtube", "instagram", "tiktok"):
+        OAUTH_REDIRECT_URIS[platform] = f"{API_ROOT}/api/oauth/{platform}/callback"
+
+
+def _api_base_for_url(url: str) -> str:
+    clean = url.strip().rstrip("/")
+    return clean if clean.endswith("/api") else f"{clean}/api"
+
+
 def _sync_bundled_runtime_files() -> None:
     if not getattr(sys, "frozen", False):
         return
     ROOT_DIR.mkdir(parents=True, exist_ok=True)
-
-    missing: list[str] = []
-    for name in ("docker-compose.yml", ".env.example", "README.md"):
+    for name in (".env.example", "README.md"):
         source = RESOURCE_ROOT / name
         if source.exists():
             shutil.copy2(source, ROOT_DIR / name)
-        elif name in {"docker-compose.yml", ".env.example"}:
-            missing.append(name)
-
-    source_backend = RESOURCE_ROOT / "backend"
-    target_backend = ROOT_DIR / "backend"
-    if source_backend.exists():
-        ignore = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".DS_Store")
-        shutil.copytree(source_backend, target_backend, dirs_exist_ok=True, ignore=ignore)
-    else:
-        missing.append("backend")
-
-    if missing:
-        searched = f"Resource root: {RESOURCE_ROOT}\nRuntime root: {ROOT_DIR}"
-        raise FileNotFoundError(
-            "ReelPush Studio is missing required bundled files.\n\n"
-            f"Missing: {', '.join(missing)}\n\n"
-            f"{searched}"
-        )
 
 
 _sync_bundled_runtime_files()
@@ -311,38 +165,10 @@ def _load_local_env() -> dict[str, str]:
     return values
 
 
-def _write_local_env_values(updates: dict[str, str]) -> None:
-    existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
-    seen: set[str] = set()
-    next_lines: list[str] = []
-
-    for line in existing_lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in line:
-            key = line.split("=", 1)[0].strip()
-            if key in updates:
-                next_lines.append(f"{key}={updates[key].replace(chr(10), '').replace(chr(13), '').strip()}")
-                seen.add(key)
-                continue
-        next_lines.append(line)
-
-    missing = [key for key in updates if key not in seen]
-    if missing:
-        if next_lines and next_lines[-1].strip():
-            next_lines.append("")
-        for key in missing:
-            next_lines.append(f"{key}={updates[key].replace(chr(10), '').replace(chr(13), '').strip()}")
-
-    ENV_PATH.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
-    LOCAL_ENV.update({key: value.strip() for key, value in updates.items()})
-    for key, value in updates.items():
-        os.environ[key] = value.strip()
 
 
 _ensure_local_env_file()
 LOCAL_ENV = _load_local_env()
-LOCAL_ADMIN_EMAIL = os.environ.get("REELPUSH_ADMIN_EMAIL") or LOCAL_ENV.get("ADMIN_EMAIL") or "admin@example.com"
-LOCAL_ADMIN_PASSWORD = os.environ.get("REELPUSH_ADMIN_PASSWORD") or LOCAL_ENV.get("ADMIN_PASSWORD") or "changeme123!"
 
 PLATFORM_DETAILS = {
     "youtube": {
@@ -385,11 +211,8 @@ CREDENTIAL_FIELDS = {
 }
 
 LOCAL_SERVICES = {
-    "api": "Local API",
-    "internet": "Internet",
-    "backend": "Backend",
-    "db": "Database",
-    "redis": "Redis",
+    "api": "Server API",
+    "internet": "Network Connection",
 }
 
 BASE_COLORS = {
@@ -927,6 +750,36 @@ class ApiClient:
             headers={"Content-Type": "application/json"},
         )
 
+    def register(self, email: str, password: str) -> dict[str, Any]:
+        payload = json.dumps({"email": email, "password": password}).encode("utf-8")
+        return self._request(
+            "POST",
+            "/auth/register",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
+    def verify_email(self, email: str, code: str) -> dict[str, Any]:
+        payload = json.dumps({"email": email, "code": code}).encode("utf-8")
+        return self._request(
+            "POST",
+            "/auth/verify-email",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
+    def get_app_settings(self) -> dict[str, Any]:
+        return self._request("GET", "/workspace/app-settings") or {}
+
+    def put_app_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
+        payload = json.dumps(settings_dict).encode("utf-8")
+        return self._request(
+            "PUT",
+            "/workspace/app-settings",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
     def upload_file(self, file_path: str) -> dict[str, Any]:
         boundary = f"----ReelPushBoundary{uuid.uuid4().hex}"
         filename = os.path.basename(file_path)
@@ -960,13 +813,17 @@ class ReelPushDesktop(tk.Tk):
         self.selected_platform_vars: dict[str, tk.BooleanVar] = {}
         self.latest_platform_statuses: list[dict[str, Any]] = []
         self.latest_staged: dict[str, Any] = {}
+        self.latest_runtime_statuses: dict[str, dict[str, Any]] = {}
         self.section_buttons: dict[str, dict[str, Any]] = {}
         self.section_frames: dict[str, tk.Frame] = {}
         self.platform_rows: dict[str, dict[str, Any]] = {}
         self.readiness_rows: dict[str, dict[str, Any]] = {}
         self.dropdown_fields: list[DropdownField] = []
         self.credential_field_rows: list[dict[str, Any]] = []
+        self.cloud_app_settings: dict[str, Any] = {}
         self.desktop_settings = _load_desktop_settings()
+        if self.desktop_settings.get("server_url"):
+            _set_active_api_url(self.desktop_settings["server_url"])
         self.theme_key = self.desktop_settings.get("theme", DEFAULT_THEME)
         self.theme_key = LEGACY_THEME_MAP.get(self.theme_key, self.theme_key)
         if self.theme_key not in THEMES:
@@ -983,7 +840,10 @@ class ReelPushDesktop(tk.Tk):
         self.container.pack(fill="both", expand=True)
 
         self.after(100, self._poll_results)
-        self.show_bootstrap()
+        if self.desktop_settings.get("server_url"):
+            self.show_bootstrap()
+        else:
+            self.show_first_run()
 
     def _build_styles(self) -> None:
         style = ttk.Style(self)
@@ -1160,7 +1020,15 @@ class ReelPushDesktop(tk.Tk):
         try:
             while True:
                 action, payload = self.results_queue.get_nowait()
-                if action == "bootstrap-ok":
+                if action == "first-run-ok":
+                    handler = getattr(self, "_first_run_ok_handler", None)
+                    if handler:
+                        handler(payload)
+                elif action == "first-run-error":
+                    handler = getattr(self, "_first_run_error_handler", None)
+                    if handler:
+                        handler(payload)
+                elif action == "bootstrap-ok":
                     self.auto_login()
                 elif action == "bootstrap-error":
                     messagebox.showerror("Startup failed", payload)
@@ -1170,18 +1038,22 @@ class ReelPushDesktop(tk.Tk):
                     self.show_login(str(payload))
                 elif action == "login-error":
                     messagebox.showerror("Login failed", payload)
+                elif action == "register-ok":
+                    self.show_verify_email(payload)
+                elif action == "register-error":
+                    if hasattr(self, "reg_error_var"):
+                        self.reg_error_var.set(payload)
+                    else:
+                        messagebox.showerror("Registration failed", payload)
+                elif action == "verify-error":
+                    if hasattr(self, "verify_error_var"):
+                        self.verify_error_var.set(payload)
+                    else:
+                        messagebox.showerror("Verification failed", payload)
                 elif action == "data-loaded":
                     self._apply_workspace_data(payload)
                 elif action == "data-error":
                     messagebox.showerror("ReelPush", payload)
-                elif action == "credentials-saved":
-                    self.credentials_save_button.configure(state="normal")
-                    self.credentials_status_var.set("Credentials saved. Local API refreshed.")
-                    self._apply_workspace_data(payload)
-                elif action == "credentials-error":
-                    self.credentials_save_button.configure(state="normal")
-                    self.credentials_status_var.set("Credential save failed.")
-                    messagebox.showerror("Credentials failed", payload)
                 elif action == "profile-saved":
                     self.status_var.set("Publishing details saved.")
                     self._update_character_counts()
@@ -1236,46 +1108,29 @@ class ReelPushDesktop(tk.Tk):
                         credential_status_label.configure(style="Bad.TLabel")
                     self.status_var.set(f"{platform.title()} credential test failed.")
                     self.load_workspace_data()
-                elif action == "credential-post-delete-ok":
-                    platform = payload["platform"]
-                    message = payload["message"]
-                    self._set_settings_credential_status(platform, "Verified", "Good.TLabel")
-                    row = self.account_rows.get(platform)
-                    if row:
-                        row["test_result"].set(message)
-                        row["test_result_label"].configure(style="PanelGood.TLabel")
-                    self.status_var.set(message)
-                elif action == "credential-post-delete-unverified":
-                    platform = payload["platform"]
-                    message = payload["message"]
-                    self._set_settings_credential_status(platform, "Unverified", "Muted.TLabel")
-                    row = self.account_rows.get(platform)
-                    if row:
-                        row["test_result"].set(message)
-                        row["test_result_label"].configure(style="PanelMuted.TLabel")
-                    self.status_var.set(message)
-                elif action == "credential-post-delete-error":
-                    platform = payload["platform"]
-                    message = payload["message"]
-                    self._set_settings_credential_status(platform, f"Invalid: {message}", "Bad.TLabel")
-                    row = self.account_rows.get(platform)
-                    if row:
-                        row["test_result"].set(message)
-                        row["test_result_label"].configure(style="PanelBad.TLabel")
-                    self.status_var.set(f"{platform.title()} post/delete test failed.")
-                elif action == "credential-post-delete-suite-error":
-                    self.credentials_status_var.set("Post/delete test could not finish.")
-                    messagebox.showerror("Post/delete test failed", payload)
-                elif action == "credential-post-delete-suite-finished":
-                    self.credentials_save_button.configure(state="normal")
-                    if hasattr(self, "credentials_post_delete_button"):
-                        self.credentials_post_delete_button.configure(state="normal")
-                    for button in self.credential_test_buttons.values():
-                        button.configure(state="normal")
-                    for row in self.account_rows.values():
-                        row["test"].configure(state="normal")
-                    self.credentials_status_var.set("Post/delete credential test finished.")
-                    self.load_workspace_data()
+                elif action == "server-connection-tested":
+                    ok = payload.get("ok", False)
+                    email = payload.get("email")
+                    if ok:
+                        msg = f"Connected as {email}." if email else "Server reachable — add credentials to sign in."
+                        self.server_conn_status_var.set(msg)
+                    else:
+                        self.server_conn_status_var.set(payload.get("error", "Connection failed."))
+                    if hasattr(self, "server_save_button"):
+                        self.server_save_button.configure(state="normal")
+                elif action == "cred-save-ok":
+                    if hasattr(self, "credentials_status_var"):
+                        self.credentials_status_var.set("Credentials saved to cloud.")
+                elif action == "cred-save-error":
+                    if hasattr(self, "credentials_status_var"):
+                        self.credentials_status_var.set(f"Save failed: {payload}")
+                elif action == "cred-load-ok":
+                    if hasattr(self, "credentials_status_var"):
+                        self._apply_cloud_credentials(payload)
+                        self.credentials_status_var.set("Credentials loaded from cloud.")
+                elif action == "cred-load-error":
+                    if hasattr(self, "credentials_status_var"):
+                        self.credentials_status_var.set(f"Load failed: {payload}")
         except queue.Empty:
             pass
         self.after(100, self._poll_results)
@@ -1290,88 +1145,6 @@ class ReelPushDesktop(tk.Tk):
                 self.results_queue.put(("operation-error", str(exc)))
 
         threading.Thread(target=runner, daemon=True).start()
-
-    @staticmethod
-    def _trim_command_output(output: str | None) -> str:
-        cleaned = (output or "").strip()
-        if len(cleaned) <= 2000:
-            return cleaned
-        return f"...\n{cleaned[-2000:]}"
-
-    def _run_bootstrap_command(self, cmd: list[str]) -> None:
-        if cmd and cmd[0] == "docker":
-            cmd = [_docker_executable(), *cmd[1:]]
-        try:
-            subprocess.run(
-                cmd,
-                cwd=ROOT_DIR,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=_runtime_env(),
-            )
-        except FileNotFoundError as exc:
-            raise RuntimeError(_docker_install_message()) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"Command timed out after {int(exc.timeout)} seconds: {shlex.join(cmd)}") from exc
-        except subprocess.CalledProcessError as exc:
-            output = "\n".join(
-                part for part in (self._trim_command_output(exc.stdout), self._trim_command_output(exc.stderr)) if part
-            )
-            message = f"Command failed with exit code {exc.returncode}: {shlex.join(cmd)}"
-            if output:
-                message = f"{message}\n\n{output}"
-            raise RuntimeError(message) from exc
-
-    @staticmethod
-    def _compose_error_needs_build(message: str) -> bool:
-        lowered = message.lower()
-        return any(
-            text in lowered
-            for text in (
-                "no such image",
-                "pull access denied",
-                "repository does not exist",
-                "must be built",
-                "not found",
-            )
-        )
-
-    def _start_local_services(self) -> None:
-        try:
-            self._run_bootstrap_command(["docker", "compose", "up", "-d", "db", "redis", "backend"])
-            return
-        except RuntimeError as exc:
-            if not self._compose_error_needs_build(str(exc)):
-                raise
-
-        self.after(0, lambda: self.bootstrap_status.set("Building local backend image…"))
-        self._run_bootstrap_command(["docker", "compose", "build", "backend"])
-        self.after(0, lambda: self.bootstrap_status.set("Starting local services…"))
-        self._run_bootstrap_command(["docker", "compose", "up", "-d", "db", "redis", "backend"])
-
-    def _refresh_backend_service(self) -> None:
-        try:
-            self._run_bootstrap_command(["docker", "compose", "up", "-d", "--force-recreate", "backend"])
-            return
-        except RuntimeError as exc:
-            if not self._compose_error_needs_build(str(exc)):
-                raise
-
-        self._run_bootstrap_command(["docker", "compose", "build", "backend"])
-        self._run_bootstrap_command(["docker", "compose", "up", "-d", "--force-recreate", "backend"])
-
-    def _wait_for_api(self, timeout: int = 60) -> None:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                with request.urlopen(f"{API_BASE}/health", timeout=2) as response:
-                    if response.status == 200:
-                        return
-            except Exception:  # noqa: BLE001
-                time.sleep(1)
-        raise RuntimeError("ReelPush API did not come back online after refreshing credentials.")
 
     def _collect_runtime_statuses(self) -> dict[str, dict[str, Any]]:
         statuses = {
@@ -1400,38 +1173,19 @@ class ReelPushDesktop(tk.Tk):
         except Exception as exc:  # noqa: BLE001
             statuses["internet"] = {"ok": False, "label": "Offline", "detail": str(exc)}
 
-        try:
-            result = subprocess.run(
-                [_docker_executable(), "compose", "ps", "--format", "json"],
-                cwd=ROOT_DIR,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=8,
-                env=_runtime_env(),
-            )
-            for line in result.stdout.splitlines():
-                if not line.strip():
-                    continue
-                item = json.loads(line)
-                service = item.get("Service")
-                if service not in statuses:
-                    continue
-                state = item.get("State") or "unknown"
-                health = item.get("Health") or ""
-                running = state == "running"
-                healthy = health in ("", "healthy")
-                statuses[service] = {
-                    "ok": running and healthy,
-                    "label": "Healthy" if running and healthy else (health.title() or state.title()),
-                    "detail": item.get("Status") or state,
-                }
-        except Exception as exc:  # noqa: BLE001
-            detail = f"Docker status unavailable: {exc}"
-            for service in ("backend", "db", "redis"):
-                statuses[service] = {"ok": False, "label": "Unknown", "detail": detail}
-
         return statuses
+
+    def _runtime_publish_blockers(self, statuses: dict[str, dict[str, Any]]) -> list[str]:
+        api = statuses.get("api", {})
+        internet = statuses.get("internet", {})
+        blockers: list[str] = []
+        if not internet.get("ok"):
+            detail = str(internet.get("detail") or "No internet connection detected.").replace("\n", " ")
+            blockers.append(f"Network unavailable: {detail}")
+        if not api.get("ok"):
+            detail = str(api.get("detail") or f"Could not reach ReelPush API at {API_BASE}.").replace("\n", " ")
+            blockers.append(f"Server unavailable: {detail}")
+        return blockers
 
     @staticmethod
     def _env_value(name: str) -> str:
@@ -1734,44 +1488,136 @@ class ReelPushDesktop(tk.Tk):
 
         def bootstrap() -> None:
             try:
-                if sys.platform == "darwin" and _docker_desktop_installed():
-                    self.after(0, lambda: self.bootstrap_status.set("Opening Docker Desktop…"))
-                    _open_docker_desktop()
-                    self.after(0, lambda: self.bootstrap_status.set("Waiting for Docker Desktop to be ready…"))
-                _wait_for_docker_ready()
-
-                steps = [
-                    ("Preparing the database…", ["docker", "compose", "exec", "-T", "backend", "alembic", "upgrade", "head"]),
-                    ("Checking the local admin account…", ["docker", "compose", "exec", "-T", "backend", "python", "scripts/seed_admin.py"]),
-                ]
-                self.after(0, lambda: self.bootstrap_status.set("Starting services…"))
-                self._start_local_services()
-                for message, cmd in steps:
-                    self.after(0, lambda m=message: self.bootstrap_status.set(m))
-                    self._run_bootstrap_command(cmd)
-
-                self.after(0, lambda: self.bootstrap_status.set("Waiting for ReelPush to finish opening…"))
-                deadline = time.time() + 60
+                self.after(0, lambda: self.bootstrap_status.set("Connecting to server…"))
+                deadline = time.time() + 15
                 while time.time() < deadline:
                     try:
-                        with request.urlopen(f"{API_BASE}/health", timeout=2) as response:
+                        with request.urlopen(f"{API_BASE}/health", timeout=3) as response:
                             if response.status == 200:
                                 self.results_queue.put(("bootstrap-ok", None))
                                 return
                     except Exception:  # noqa: BLE001
                         time.sleep(1)
-                self.results_queue.put(("bootstrap-error", "ReelPush did not finish starting in time."))
+                self.results_queue.put((
+                    "bootstrap-error",
+                    f"Cannot reach {API_ROOT}.\n\nCheck the Server URL in Settings, or confirm the server is running.",
+                ))
             except Exception as exc:  # noqa: BLE001
                 self.results_queue.put(("bootstrap-error", str(exc)))
 
         threading.Thread(target=bootstrap, daemon=True).start()
 
+    def show_first_run(self) -> None:
+        self._clear_container()
+
+        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
+        panel.place(relx=0.5, rely=0.5, anchor="center")
+
+        ttk.Label(panel, text="Welcome to ReelPush", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(
+            panel,
+            text="Enter your team's ReelPush server URL to get started.",
+            style="Subheading.TLabel",
+        ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+
+        ttk.Label(panel, text="SERVER URL", style="Micro.TLabel").pack(anchor="w")
+        url_surface, url_entry = self._make_entry_field(panel, bg_color=self.colors["panel"])
+        url_surface.pack(fill="x", pady=(4, 0))
+        ttk.Label(
+            panel,
+            text="e.g. https://reelpush.yourdomain.com or http://1.2.3.4:8100",
+            style="FieldHelp.TLabel",
+        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
+
+        creds_row = ttk.Frame(panel, style="Panel.TFrame")
+        creds_row.pack(fill="x")
+        creds_row.columnconfigure(0, weight=1)
+        creds_row.columnconfigure(1, weight=1)
+
+        email_col = ttk.Frame(creds_row, style="Panel.TFrame")
+        email_col.grid(row=0, column=0, sticky="ew", padx=(0, SPACING["md"]))
+        ttk.Label(email_col, text="YOUR EMAIL", style="Micro.TLabel").pack(anchor="w")
+        email_surface, email_entry = self._make_entry_field(email_col, bg_color=self.colors["panel"])
+        email_surface.pack(fill="x", pady=(4, 0))
+
+        pw_col = ttk.Frame(creds_row, style="Panel.TFrame")
+        pw_col.grid(row=0, column=1, sticky="ew")
+        ttk.Label(pw_col, text="YOUR PASSWORD", style="Micro.TLabel").pack(anchor="w")
+        pw_surface, pw_entry = self._make_entry_field(pw_col, show="*", bg_color=self.colors["panel"])
+        pw_surface.pack(fill="x", pady=(4, 0))
+
+        ttk.Label(
+            panel,
+            text="Credentials are saved locally on this device only.",
+            style="FieldHelp.TLabel",
+        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
+
+        status_var = tk.StringVar(value="")
+        connect_button: list[ttk.Button] = []
+
+        def do_connect() -> None:
+            url = url_entry.get().strip().rstrip("/")
+            email = email_entry.get().strip()
+            password = pw_entry.get().strip()
+            if not url:
+                status_var.set("Enter a server URL first.")
+                return
+            status_var.set("Connecting…")
+            if connect_button:
+                connect_button[0].configure(state="disabled")
+
+            def work() -> dict[str, Any]:
+                return self._do_test_server_connection(url, email, password)
+
+            def runner() -> None:
+                result = work()
+                ok = result.get("ok", False)
+                if ok:
+                    self.desktop_settings["server_url"] = url
+                    self.desktop_settings["login_email"] = email
+                    self.desktop_settings["login_password"] = password
+                    _save_desktop_settings(self.desktop_settings)
+                    _set_active_api_url(url)
+                    self.results_queue.put(("first-run-ok", None))
+                else:
+                    self.results_queue.put(("first-run-error", result.get("error", "Connection failed.")))
+
+            threading.Thread(target=runner, daemon=True).start()
+
+        btn = ttk.Button(panel, text="Connect", style="Accent.TButton", command=do_connect)
+        btn.pack(anchor="w")
+        connect_button.append(btn)
+
+        status_label = ttk.Label(panel, textvariable=status_var, style="Muted.TLabel", wraplength=420)
+        status_label.pack(anchor="w", pady=(SPACING["md"], 0))
+
+        def on_first_run_ok(_payload: Any) -> None:
+            status_label.destroy()
+            self.show_bootstrap()
+
+        def on_first_run_error(message: str) -> None:
+            status_var.set(message)
+            if connect_button:
+                connect_button[0].configure(state="normal")
+
+        self._first_run_ok_handler = on_first_run_ok
+        self._first_run_error_handler = on_first_run_error
+
     def auto_login(self) -> None:
-        self.bootstrap_status.set("Opening your local workspace…")
+        self.bootstrap_status.set("Connecting to workspace…")
+        email = self.desktop_settings.get("login_email", "")
+        password = self.desktop_settings.get("login_password", "")
+        if not email or not password:
+            self.show_login()
+            return
 
         def work() -> dict[str, str]:
-            self.client.login(LOCAL_ADMIN_EMAIL, LOCAL_ADMIN_PASSWORD)
-            return {"email": LOCAL_ADMIN_EMAIL}
+            self.client.login(email, password)
+            try:
+                self.cloud_app_settings = self.client.get_app_settings()
+            except Exception:
+                self.cloud_app_settings = {}
+            return {"email": email}
 
         def runner() -> None:
             try:
@@ -1787,27 +1633,30 @@ class ReelPushDesktop(tk.Tk):
         panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
         panel.place(relx=0.5, rely=0.5, anchor="center")
 
+        server_url = self.desktop_settings.get("server_url", API_ROOT)
+        login_email_default = self.desktop_settings.get("login_email", "")
+        login_password_default = self.desktop_settings.get("login_password", "")
+        subtitle = f"Sign in to {server_url}."
+        if error_message:
+            subtitle = f"Could not sign in to {server_url}. Enter your credentials to continue."
+
         ttk.Label(panel, text="Sign in", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(
-            panel,
-            text="Automatic local sign-in failed. Use the local admin account to continue.",
-            style="Subheading.TLabel",
-        ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+        ttk.Label(panel, text=subtitle, style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
         if error_message:
             error_var = tk.StringVar(value=error_message)
             ttk.Label(panel, textvariable=error_var, style="Muted.TLabel", wraplength=420).pack(anchor="w", pady=(0, SPACING["xl"]))
 
         ttk.Label(panel, text="Email", style="Body.TLabel").pack(anchor="w")
         login_email_surface, self.login_email = self._make_entry_field(panel, bg_color=self.colors["panel"])
-        self.login_email.insert(0, LOCAL_ADMIN_EMAIL)
+        self.login_email.insert(0, login_email_default)
         login_email_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["xs"]))
-        ttk.Label(panel, text="Local admin account used by the desktop app.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+        ttk.Label(panel, text="Your account on this ReelPush server.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
 
         ttk.Label(panel, text="Password", style="Body.TLabel").pack(anchor="w")
         login_password_surface, self.login_password = self._make_entry_field(panel, show="*", bg_color=self.colors["panel"])
-        self.login_password.insert(0, LOCAL_ADMIN_PASSWORD)
+        self.login_password.insert(0, login_password_default)
         login_password_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["xs"]))
-        ttk.Label(panel, text="Only used to open your local workspace.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["xl"]))
+        ttk.Label(panel, text="Your account password.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["xl"]))
 
         actions = ttk.Frame(panel, style="Panel.TFrame")
         actions.pack(anchor="w")
@@ -1818,6 +1667,10 @@ class ReelPushDesktop(tk.Tk):
 
             def work() -> dict[str, str]:
                 self.client.login(email, password)
+                try:
+                    self.cloud_app_settings = self.client.get_app_settings()
+                except Exception:
+                    self.cloud_app_settings = {}
                 return {"email": email}
 
             threading.Thread(
@@ -1825,7 +1678,11 @@ class ReelPushDesktop(tk.Tk):
                 daemon=True,
             ).start()
 
+        def do_register() -> None:
+            self.show_register()
+
         ttk.Button(actions, text="Open Workspace", style="Accent.TButton", command=do_login).pack(side="left")
+        ttk.Button(actions, text="Create Account", style="Secondary.TButton", command=do_register).pack(side="left", padx=(SPACING["md"], 0))
 
     def _login_worker(self, work) -> None:
         try:
@@ -1833,6 +1690,119 @@ class ReelPushDesktop(tk.Tk):
             self.results_queue.put(("login-ok", result))
         except Exception as exc:  # noqa: BLE001
             self.results_queue.put(("login-error", str(exc)))
+
+    def show_register(self) -> None:
+        self._clear_container()
+
+        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
+        panel.place(relx=0.5, rely=0.5, anchor="center")
+
+        ttk.Label(panel, text="Create Account", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(panel, text="Register a new account on this ReelPush server.", style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+
+        self.reg_error_var = tk.StringVar(value="")
+        self.reg_error_label = ttk.Label(panel, textvariable=self.reg_error_var, style="Muted.TLabel", wraplength=420)
+        self.reg_error_label.pack(anchor="w")
+
+        ttk.Label(panel, text="Email", style="Body.TLabel").pack(anchor="w")
+        reg_email_surface, self.reg_email = self._make_entry_field(panel, bg_color=self.colors["panel"])
+        reg_email_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["md"]))
+
+        ttk.Label(panel, text="Password", style="Body.TLabel").pack(anchor="w")
+        reg_pw_surface, self.reg_password = self._make_entry_field(panel, show="*", bg_color=self.colors["panel"])
+        reg_pw_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["xs"]))
+        ttk.Label(panel, text="Minimum 8 characters.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+
+        ttk.Label(panel, text="Confirm Password", style="Body.TLabel").pack(anchor="w")
+        reg_cpw_surface, self.reg_confirm_password = self._make_entry_field(panel, show="*", bg_color=self.colors["panel"])
+        reg_cpw_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["xl"]))
+
+        actions = ttk.Frame(panel, style="Panel.TFrame")
+        actions.pack(anchor="w")
+
+        def do_submit() -> None:
+            email = self.reg_email.get().strip()
+            password = self.reg_password.get()
+            confirm = self.reg_confirm_password.get()
+            self.reg_error_var.set("")
+
+            if not email or not password:
+                self.reg_error_var.set("Email and password are required.")
+                return
+            if password != confirm:
+                self.reg_error_var.set("Passwords do not match.")
+                return
+            if len(password) < 8:
+                self.reg_error_var.set("Password must be at least 8 characters.")
+                return
+
+            def work() -> dict:
+                return self.client.register(email, password)
+
+            threading.Thread(
+                target=lambda: self._register_worker(email, work),
+                daemon=True,
+            ).start()
+
+        ttk.Button(actions, text="Register", style="Accent.TButton", command=do_submit).pack(side="left")
+        ttk.Button(actions, text="Back to Login", style="Secondary.TButton", command=lambda: self.show_login()).pack(side="left", padx=(SPACING["md"], 0))
+
+    def _register_worker(self, email: str, work) -> None:
+        try:
+            work()
+            self.results_queue.put(("register-ok", email))
+        except Exception as exc:  # noqa: BLE001
+            self.results_queue.put(("register-error", str(exc)))
+
+    def show_verify_email(self, email: str) -> None:
+        self._clear_container()
+
+        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
+        panel.place(relx=0.5, rely=0.5, anchor="center")
+
+        ttk.Label(panel, text="Verify Your Email", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(panel, text=f"A 6-digit code was sent to {email}.\nIt expires in 35 minutes.", style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+
+        self.verify_error_var = tk.StringVar(value="")
+        ttk.Label(panel, textvariable=self.verify_error_var, style="Muted.TLabel", wraplength=420).pack(anchor="w")
+
+        ttk.Label(panel, text="Verification Code", style="Body.TLabel").pack(anchor="w")
+        verify_code_surface, self.verify_code_entry = self._make_entry_field(panel, bg_color=self.colors["panel"])
+        verify_code_surface.pack(anchor="w", fill="x", pady=(SPACING["xs"], SPACING["xl"]))
+
+        actions = ttk.Frame(panel, style="Panel.TFrame")
+        actions.pack(anchor="w")
+
+        def do_verify() -> None:
+            code = self.verify_code_entry.get().strip()
+            self.verify_error_var.set("")
+            if len(code) != 6 or not code.isdigit():
+                self.verify_error_var.set("Enter the 6-digit code from your email.")
+                return
+
+            def work() -> dict:
+                result = self.client.verify_email(email, code)
+                self.client.token = result["access_token"]
+                try:
+                    self.cloud_app_settings = self.client.get_app_settings()
+                except Exception:
+                    self.cloud_app_settings = {}
+                return {"email": email}
+
+            threading.Thread(
+                target=lambda: self._verify_worker(work),
+                daemon=True,
+            ).start()
+
+        ttk.Button(actions, text="Verify & Sign In", style="Accent.TButton", command=do_verify).pack(side="left")
+        ttk.Button(actions, text="Back", style="Secondary.TButton", command=lambda: self.show_register()).pack(side="left", padx=(SPACING["md"], 0))
+
+    def _verify_worker(self, work) -> None:
+        try:
+            result = work()
+            self.results_queue.put(("login-ok", result))
+        except Exception as exc:  # noqa: BLE001
+            self.results_queue.put(("verify-error", str(exc)))
 
     def show_main(self, user: dict[str, str]) -> None:
         self._clear_container()
@@ -1862,7 +1832,7 @@ class ReelPushDesktop(tk.Tk):
             shadow=True,
         )
         badge.pack(side="right", anchor="ne", padx=(SPACING["xl"], 0))
-        ttk.Label(badge.body, text="LOCAL WORKSPACE", style="PanelMuted.TLabel").pack(anchor="e")
+        ttk.Label(badge.body, text="CLOUD WORKSPACE", style="PanelMuted.TLabel").pack(anchor="e")
         ttk.Label(badge.body, textvariable=self.account_var, style="PanelBody.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
         ttk.Label(badge.body, textvariable=self.status_var, style="PanelMuted.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
 
@@ -2577,6 +2547,7 @@ class ReelPushDesktop(tk.Tk):
     def _build_readiness_checklist(self, parent: tk.Frame) -> None:
         self.readiness_rows = {}
         checklist = (
+            ("network", "Network connected"),
             ("video", "Video selected"),
             ("details", "Post details valid"),
             ("platform_selected", "Platform selected"),
@@ -2902,6 +2873,63 @@ class ReelPushDesktop(tk.Tk):
         ).pack(anchor="w", pady=(SPACING["xl"], 0))
 
     def _build_settings_tab(self) -> None:
+        # ── Backend Connection ─────────────────────────────────────────────
+        conn = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
+        conn.pack(fill="x", pady=(0, SPACING["lg"]))
+
+        ttk.Label(conn, text="Backend Connection", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+
+        ttk.Label(conn, text="SERVER URL", style="Micro.TLabel").pack(anchor="w")
+        server_url_surface, self.server_url_entry = self._make_entry_field(conn, bg_color=self.colors["panel"])
+        self.server_url_entry.insert(0, self.desktop_settings.get("server_url", API_ROOT))
+        server_url_surface.pack(fill="x", pady=(4, 0))
+        ttk.Label(
+            conn,
+            text="Enter the shared server URL your team uses, e.g. https://reelpush.yourdomain.com",
+            style="FieldHelp.TLabel",
+        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
+
+        creds_row = ttk.Frame(conn, style="Panel.TFrame")
+        creds_row.pack(fill="x", pady=(0, SPACING["xs"]))
+        creds_row.columnconfigure(0, weight=1)
+        creds_row.columnconfigure(1, weight=1)
+
+        email_frame = ttk.Frame(creds_row, style="Panel.TFrame")
+        email_frame.grid(row=0, column=0, sticky="ew", padx=(0, SPACING["md"]))
+        ttk.Label(email_frame, text="YOUR EMAIL", style="Micro.TLabel").pack(anchor="w")
+        email_surface, self.server_email_entry = self._make_entry_field(email_frame, bg_color=self.colors["panel"])
+        self.server_email_entry.insert(0, self.desktop_settings.get("login_email", ""))
+        email_surface.pack(fill="x", pady=(4, 0))
+
+        pw_frame = ttk.Frame(creds_row, style="Panel.TFrame")
+        pw_frame.grid(row=0, column=1, sticky="ew")
+        ttk.Label(pw_frame, text="YOUR PASSWORD", style="Micro.TLabel").pack(anchor="w")
+        pw_surface, self.server_password_entry = self._make_entry_field(pw_frame, show="*", bg_color=self.colors["panel"])
+        self.server_password_entry.insert(0, self.desktop_settings.get("login_password", ""))
+        pw_surface.pack(fill="x", pady=(4, 0))
+
+        ttk.Label(conn, text="Server URL and login are saved locally on this device.", style="FieldHelp.TLabel").pack(
+            anchor="w", pady=(SPACING["xs"], SPACING["md"])
+        )
+
+        conn_actions = ttk.Frame(conn, style="Panel.TFrame")
+        conn_actions.pack(anchor="w")
+        self.server_save_button = ttk.Button(
+            conn_actions, text="Save & Connect", style="Accent.TButton", command=self.save_server_settings
+        )
+        self.server_save_button.pack(side="left")
+        ttk.Button(
+            conn_actions, text="Test Connection", style="Secondary.TButton", command=self.test_server_connection
+        ).pack(side="left", padx=(SPACING["md"], 0))
+
+        self.server_conn_status_var = tk.StringVar(
+            value="Enter your server URL and credentials, then click Save & Connect."
+        )
+        ttk.Label(conn, textvariable=self.server_conn_status_var, style="Muted.TLabel", wraplength=620).pack(
+            anchor="w", pady=(SPACING["md"], 0)
+        )
+
+        # ── Appearance ─────────────────────────────────────────────────────
         panel = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
         panel.pack(fill="x")
 
@@ -2931,89 +2959,90 @@ class ReelPushDesktop(tk.Tk):
 
         credentials = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
         credentials.pack(fill="x", pady=(SPACING["lg"], 0))
-        ttk.Label(credentials, text="Platform Credentials", style="CardTitle.TLabel").grid(
-            row=0,
-            column=0,
-            sticky="w",
-            pady=(0, SPACING["md"]),
-        )
+        ttk.Label(credentials, text="Platform Credentials", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+        ttk.Label(
+            credentials,
+            text=(
+                "Enter your platform OAuth credentials below. They are encrypted and stored on the server "
+                "so they sync automatically when you log in on any computer."
+            ),
+            style="Muted.TLabel",
+            wraplength=620,
+        ).pack(anchor="w", pady=(0, SPACING["lg"]))
 
         self.credential_entries: dict[str, tk.Entry] = {}
         self.credential_test_buttons: dict[str, ttk.Button] = {}
         self.credential_test_status_vars: dict[str, tk.StringVar] = {}
         self.credential_test_status_labels: dict[str, ttk.Label] = {}
-        self.credential_status_text: dict[str, str] = {}
         self.oauth_redirect_vars: dict[str, tk.StringVar] = {}
         self.credential_field_rows = []
-        for row_index, (platform_name, fields) in enumerate(CREDENTIAL_FIELDS.items()):
+
+        # Mapping from CREDENTIAL_FIELDS env key to app settings key
+        _cred_key_map = {
+            "YOUTUBE_CLIENT_ID": "youtube_client_id",
+            "YOUTUBE_CLIENT_SECRET": "youtube_client_secret",
+            "INSTAGRAM_APP_ID": "instagram_app_id",
+            "INSTAGRAM_APP_SECRET": "instagram_app_secret",
+            "TIKTOK_CLIENT_KEY": "tiktok_client_key",
+            "TIKTOK_CLIENT_SECRET": "tiktok_client_secret",
+        }
+        stored = getattr(self, "cloud_app_settings", {}) or {}
+
+        for platform_name, fields in CREDENTIAL_FIELDS.items():
             platform = platform_name.lower()
             platform_frame = ttk.Frame(credentials, style="Panel.TFrame")
-            platform_frame.grid(row=row_index + 1, column=0, sticky="ew", pady=(0 if row_index == 0 else SPACING["md"], 0))
-            credentials.columnconfigure(0, weight=1)
+            platform_frame.pack(fill="x", pady=(0, SPACING["sm"]))
+            platform_frame.columnconfigure(1, weight=1)
 
-            platform_label = ttk.Label(platform_frame, text=platform_name, style="Body.TLabel", width=12)
-            platform_label.grid(row=0, column=0, sticky="w", padx=(0, SPACING["md"]))
-            field_records = []
-            for field_index, (env_key, label, is_secret) in enumerate(fields):
-                field_frame = ttk.Frame(platform_frame, style="Panel.TFrame")
-                field_frame.grid(row=0, column=field_index + 1, sticky="ew", padx=(0, SPACING["md"]))
-                platform_frame.columnconfigure(field_index + 1, weight=1)
+            # Row 0: platform name + test status + test button
+            ttk.Label(platform_frame, text=platform_name, style="Body.TLabel", width=12).grid(
+                row=0, column=0, sticky="nw", padx=(0, SPACING["md"]), pady=(SPACING["xs"], 0)
+            )
+            fields_frame = ttk.Frame(platform_frame, style="Panel.TFrame")
+            fields_frame.grid(row=0, column=1, sticky="ew")
+            fields_frame.columnconfigure(0, weight=1)
 
-                ttk.Label(field_frame, text=label, style="Muted.TLabel").pack(anchor="w")
-                entry_surface, entry = self._make_entry_field(
-                    field_frame,
-                    show="*" if is_secret else "",
-                    bg_color=self.colors["panel"],
-                )
-                entry.insert(0, self._env_value(env_key))
-                entry_surface.pack(fill="x", pady=(SPACING["xs"], 0))
+            for fi, (env_key, label, is_secret) in enumerate(fields):
+                settings_key = _cred_key_map.get(env_key, env_key.lower())
+                ttk.Label(fields_frame, text=label, style="Micro.TLabel").grid(row=fi * 2, column=0, sticky="w")
+                show_char = "*" if is_secret else ""
+                surf, entry = self._make_entry_field(fields_frame, show=show_char, bg_color=self.colors["panel"])
+                surf.grid(row=fi * 2 + 1, column=0, sticky="ew", pady=(2, SPACING["xs"]))
+                stored_val = stored.get(settings_key, "")
+                if stored_val:
+                    entry.insert(0, stored_val)
                 self.credential_entries[env_key] = entry
-                field_records.append({"frame": field_frame, "surface": entry_surface})
 
-            test_frame = ttk.Frame(platform_frame, style="Panel.TFrame")
-            test_frame.grid(row=0, column=len(fields) + 1, sticky="e")
+            test_col_frame = ttk.Frame(platform_frame, style="Panel.TFrame")
+            test_col_frame.grid(row=0, column=2, sticky="ne", padx=(SPACING["md"], 0))
+            test_status_var = tk.StringVar(value="")
+            test_status_label = ttk.Label(
+                test_col_frame, textvariable=test_status_var, style="Muted.TLabel", wraplength=200,
+            )
+            test_status_label.pack(anchor="e")
             test_button = ttk.Button(
-                test_frame,
+                test_col_frame,
                 text="Test",
                 style="Secondary.TButton",
                 command=lambda p=platform: self.test_platform_credentials(p),
             )
-            test_button.pack(anchor="e")
-            test_status_var = tk.StringVar(value="")
-            test_status_label = ttk.Label(
-                test_frame,
-                textvariable=test_status_var,
-                style="Muted.TLabel",
-                wraplength=180,
-            )
-            test_status_label.pack(anchor="e", pady=(SPACING["sm"], 0))
+            test_button.pack(anchor="e", pady=(SPACING["xs"], 0))
+
             self.credential_test_buttons[platform] = test_button
             self.credential_test_status_vars[platform] = test_status_var
             self.credential_test_status_labels[platform] = test_status_label
 
-            redirect_frame = None
             if platform == "youtube":
-                redirect_frame = ttk.Frame(platform_frame, style="Panel.TFrame")
-                redirect_frame.grid(
-                    row=1,
-                    column=1,
-                    columnspan=len(fields) + 1,
-                    sticky="ew",
-                    pady=(SPACING["md"], 0),
-                )
+                redirect_frame = ttk.Frame(credentials, style="Panel.TFrame")
+                redirect_frame.pack(fill="x", pady=(0, SPACING["md"]))
                 redirect_frame.columnconfigure(0, weight=1)
-                ttk.Label(
-                    redirect_frame,
-                    text="Google redirect URI",
-                    style="Muted.TLabel",
-                ).grid(row=0, column=0, columnspan=2, sticky="w")
+                ttk.Label(redirect_frame, text="Google redirect URI", style="Muted.TLabel").grid(
+                    row=0, column=0, columnspan=2, sticky="w"
+                )
                 redirect_var = tk.StringVar(value=OAUTH_REDIRECT_URIS[platform])
                 self.oauth_redirect_vars[platform] = redirect_var
                 ttk.Label(
-                    redirect_frame,
-                    textvariable=redirect_var,
-                    style="PanelBody.TLabel",
-                    wraplength=560,
+                    redirect_frame, textvariable=redirect_var, style="PanelBody.TLabel", wraplength=560
                 ).grid(row=1, column=0, sticky="ew", pady=(SPACING["xs"], 0))
                 ttk.Button(
                     redirect_frame,
@@ -3028,48 +3057,16 @@ class ReelPushDesktop(tk.Tk):
                     wraplength=620,
                 ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(SPACING["sm"], 0))
 
-            self.credential_field_rows.append(
-                {
-                    "frame": platform_frame,
-                    "label": platform_label,
-                    "fields": field_records,
-                    "test_frame": test_frame,
-                    "redirect_frame": redirect_frame,
-                }
-            )
+        cred_actions = ttk.Frame(credentials, style="Panel.TFrame")
+        cred_actions.pack(anchor="w", pady=(SPACING["lg"], 0))
+        ttk.Button(cred_actions, text="Save to Cloud", style="Accent.TButton", command=self.save_credentials_to_cloud).pack(side="left")
+        ttk.Button(cred_actions, text="Load from Cloud", style="Secondary.TButton", command=self.load_credentials_from_cloud).pack(side="left", padx=(SPACING["md"], 0))
 
-        credential_actions = ttk.Frame(credentials, style="Panel.TFrame")
-        credential_actions.grid(row=len(CREDENTIAL_FIELDS) + 1, column=0, sticky="w", pady=(SPACING["lg"], 0))
-        self.credentials_save_button = ttk.Button(
-            credential_actions,
-            text="Save Credentials",
-            style="Accent.TButton",
-            command=self.save_platform_credentials,
+        self.credentials_status_var = tk.StringVar(value="")
+        ttk.Label(credentials, textvariable=self.credentials_status_var, style="Muted.TLabel", wraplength=620).pack(
+            anchor="w", pady=(SPACING["xs"], 0)
         )
-        self.credentials_save_button.pack(side="left")
-        ttk.Button(
-            credential_actions,
-            text="Refresh From .env",
-            style="Secondary.TButton",
-            command=self.reload_credential_fields,
-        ).pack(side="left", padx=(SPACING["md"], 0))
-        self.credentials_post_delete_button = ttk.Button(
-            credential_actions,
-            text="Test Credentials",
-            style="Secondary.TButton",
-            command=self.post_delete_test_platform_credentials,
-        )
-        self.credentials_post_delete_button.pack(side="left", padx=(SPACING["md"], 0))
 
-        self.credentials_status_var = tk.StringVar(value="Saved values update .env and refresh the local API.")
-        ttk.Label(credentials, textvariable=self.credentials_status_var, style="Muted.TLabel", wraplength=720).grid(
-            row=len(CREDENTIAL_FIELDS) + 2,
-            column=0,
-            sticky="w",
-            pady=(SPACING["md"], 0),
-        )
-        credentials.bind("<Configure>", lambda event: self._layout_credential_fields(event.width), add="+")
-        self.after_idle(lambda: self._layout_credential_fields(credentials.winfo_width()))
 
     def copy_oauth_redirect_uri(self, platform: str) -> None:
         uri = OAUTH_REDIRECT_URIS.get(platform)
@@ -3079,49 +3076,62 @@ class ReelPushDesktop(tk.Tk):
         self.clipboard_append(uri)
         self.credentials_status_var.set(f"Copied {PLATFORM_DETAILS[platform]['short_name']} redirect URI.")
 
-    def _layout_credential_fields(self, width: int) -> None:
-        if not self.credential_field_rows or width <= 1:
+    _CRED_ENV_TO_SETTINGS = {
+        "YOUTUBE_CLIENT_ID": "youtube_client_id",
+        "YOUTUBE_CLIENT_SECRET": "youtube_client_secret",
+        "INSTAGRAM_APP_ID": "instagram_app_id",
+        "INSTAGRAM_APP_SECRET": "instagram_app_secret",
+        "TIKTOK_CLIENT_KEY": "tiktok_client_key",
+        "TIKTOK_CLIENT_SECRET": "tiktok_client_secret",
+    }
+
+    def _collect_credential_entries(self) -> dict[str, str]:
+        result = {}
+        for env_key, entry in self.credential_entries.items():
+            val = entry.get().strip()
+            settings_key = self._CRED_ENV_TO_SETTINGS.get(env_key, env_key.lower())
+            if val:
+                result[settings_key] = val
+        return result
+
+    def save_credentials_to_cloud(self) -> None:
+        creds = self._collect_credential_entries()
+        if not creds:
+            self.credentials_status_var.set("No credentials to save.")
             return
-        stacked = width < 760
-        if getattr(self, "_credential_fields_stacked", None) == stacked:
-            return
-        self._credential_fields_stacked = stacked
-        for row in self.credential_field_rows:
-            frame = row["frame"]
-            label = row["label"]
-            test_frame = row["test_frame"]
-            redirect_frame = row.get("redirect_frame")
-            for column in range(5):
-                frame.columnconfigure(column, weight=0)
-            if stacked:
-                label.grid(row=0, column=0, sticky="w", padx=0, pady=(0, SPACING["sm"]))
-                frame.columnconfigure(0, weight=1)
-                for index, field in enumerate(row["fields"]):
-                    field["frame"].grid(row=index + 1, column=0, sticky="ew", padx=0, pady=(0 if index == 0 else SPACING["sm"], 0))
-                test_frame.grid(row=len(row["fields"]) + 1, column=0, sticky="w", pady=(SPACING["md"], 0))
-                if redirect_frame is not None:
-                    redirect_frame.grid(
-                        row=len(row["fields"]) + 2,
-                        column=0,
-                        columnspan=1,
-                        sticky="ew",
-                        pady=(SPACING["md"], 0),
-                    )
-            else:
-                label.grid(row=0, column=0, sticky="w", padx=(0, SPACING["md"]), pady=0)
-                for index, field in enumerate(row["fields"]):
-                    column = index + 1
-                    frame.columnconfigure(column, weight=1)
-                    field["frame"].grid(row=0, column=column, sticky="ew", padx=(0, SPACING["md"]), pady=0)
-                test_frame.grid(row=0, column=len(row["fields"]) + 1, sticky="e", pady=0)
-                if redirect_frame is not None:
-                    redirect_frame.grid(
-                        row=1,
-                        column=1,
-                        columnspan=len(row["fields"]) + 1,
-                        sticky="ew",
-                        pady=(SPACING["md"], 0),
-                    )
+
+        def work() -> dict:
+            return self.client.put_app_settings(creds)
+
+        def _save_worker() -> None:
+            try:
+                result = work()
+                self.results_queue.put(("cred-save-ok", result))
+            except Exception as exc:  # noqa: BLE001
+                self.results_queue.put(("cred-save-error", str(exc)))
+
+        self.credentials_status_var.set("Saving credentials to cloud…")
+        threading.Thread(target=_save_worker, daemon=True).start()
+
+    def load_credentials_from_cloud(self) -> None:
+        def _load_worker() -> None:
+            try:
+                result = self.client.get_app_settings()
+                self.results_queue.put(("cred-load-ok", result))
+            except Exception as exc:  # noqa: BLE001
+                self.results_queue.put(("cred-load-error", str(exc)))
+
+        self.credentials_status_var.set("Loading credentials from cloud…")
+        threading.Thread(target=_load_worker, daemon=True).start()
+
+    def _apply_cloud_credentials(self, data: dict) -> None:
+        """Populate credential entry fields from cloud settings data."""
+        for env_key, entry in self.credential_entries.items():
+            settings_key = self._CRED_ENV_TO_SETTINGS.get(env_key, env_key.lower())
+            val = data.get(settings_key, "")
+            if val:
+                entry.delete(0, "end")
+                entry.insert(0, val)
 
     def _build_accent_preset_swatches(self, parent: ttk.Frame) -> None:
         swatches = ttk.Frame(parent, style="Panel.TFrame")
@@ -3186,6 +3196,69 @@ class ReelPushDesktop(tk.Tk):
             status_var.set(message)
             status_label.configure(style=style)
 
+    def save_server_settings(self) -> None:
+        url = self.server_url_entry.get().strip().rstrip("/")
+        email = self.server_email_entry.get().strip()
+        password = self.server_password_entry.get().strip()
+        if not url:
+            self.server_conn_status_var.set("Enter a server URL first.")
+            return
+        self.desktop_settings["server_url"] = url
+        self.desktop_settings["login_email"] = email
+        self.desktop_settings["login_password"] = password
+        _save_desktop_settings(self.desktop_settings)
+        _set_active_api_url(url)
+        for platform, var in self.oauth_redirect_vars.items():
+            var.set(OAUTH_REDIRECT_URIS[platform])
+        self.server_conn_status_var.set("Saved. Testing connection…")
+        self.server_save_button.configure(state="disabled")
+        self._run_bg(
+            lambda: self._do_test_server_connection(url, email, password),
+            "server-connection-tested",
+        )
+
+    def test_server_connection(self) -> None:
+        url = self.server_url_entry.get().strip().rstrip("/")
+        email = self.server_email_entry.get().strip()
+        password = self.server_password_entry.get().strip()
+        if not url:
+            self.server_conn_status_var.set("Enter a server URL first.")
+            return
+        self.server_conn_status_var.set("Testing…")
+        self._run_bg(
+            lambda: self._do_test_server_connection(url, email, password),
+            "server-connection-tested",
+        )
+
+    def _do_test_server_connection(self, url: str, email: str, password: str) -> dict[str, Any]:
+        base = _api_base_for_url(url)
+        try:
+            with request.urlopen(request.Request(f"{base}/health"), timeout=5) as resp:
+                if resp.status != 200:
+                    return {"ok": False, "error": f"Health check returned HTTP {resp.status}."}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"Cannot reach {url}: {exc}"}
+        if not email or not password:
+            return {"ok": True, "email": None}
+        try:
+            payload = json.dumps({"email": email, "password": password}).encode()
+            login_req = request.Request(
+                f"{base}/auth/login",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with request.urlopen(login_req, timeout=5) as resp:
+                result = json.loads(resp.read())
+                self.client.token = result["access_token"]
+            return {"ok": True, "email": email}
+        except error.HTTPError as exc:
+            if exc.code == 401:
+                return {"ok": False, "error": "Invalid email or password."}
+            return {"ok": False, "error": f"Login failed (HTTP {exc.code})."}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"Login error: {exc}"}
+
     def apply_selected_theme(self) -> None:
         key = self._theme_key_from_name(self.theme_var.get())
         self.theme_key = key
@@ -3230,20 +3303,6 @@ class ReelPushDesktop(tk.Tk):
                 fg=colors["muted"] if getattr(self.caption_text, "_rp_placeholder_active", False) else colors["text"],
                 insertbackground=colors["text"],
             )
-        for entry in getattr(self, "credential_entries", {}).values():
-            entry.configure(
-                bg=colors["field"],
-                fg=colors["text"],
-                insertbackground=colors["text"],
-                disabledbackground=colors["disabled"],
-                disabledforeground=colors["disabled_text"],
-            )
-        for row in getattr(self, "credential_field_rows", []):
-            for field in row["fields"]:
-                surface = field["surface"]
-                surface.set_bg(colors["panel"])
-                surface.set_fill(colors["field"])
-                self._apply_field_outline(surface)
         if hasattr(self, "publish_log"):
             self.publish_log.configure(
                 bg=colors["log"],
@@ -3258,103 +3317,6 @@ class ReelPushDesktop(tk.Tk):
         self._refresh_delivery_readiness()
         self._update_accent_swatch_selection()
 
-    def reload_credential_fields(self) -> None:
-        LOCAL_ENV.clear()
-        LOCAL_ENV.update(_load_local_env())
-        for env_key, entry in self.credential_entries.items():
-            entry.delete(0, "end")
-            entry.insert(0, self._env_value(env_key))
-        self.credentials_status_var.set("Credential fields refreshed from .env.")
-
-    def save_platform_credentials(self) -> None:
-        updates = {env_key: entry.get().strip() for env_key, entry in self.credential_entries.items()}
-        self.credentials_status_var.set("Saving credentials and refreshing local API...")
-        self.credentials_save_button.configure(state="disabled")
-
-        def work() -> dict[str, Any]:
-            _write_local_env_values(updates)
-            self._refresh_backend_service()
-            self._wait_for_api()
-            return {
-                "statuses": self.client.oauth_statuses(),
-                "profile": self.client.get_profile(),
-                "staged": self.client.get_staged(),
-                "runtime": self._collect_runtime_statuses(),
-            }
-
-        def runner() -> None:
-            try:
-                self.results_queue.put(("credentials-saved", work()))
-            except Exception as exc:  # noqa: BLE001
-                self.results_queue.put(("credentials-error", str(exc)))
-
-        threading.Thread(target=runner, daemon=True).start()
-
-    def post_delete_test_platform_credentials(self) -> None:
-        updates = {env_key: entry.get().strip() for env_key, entry in self.credential_entries.items()}
-        platforms_to_test: list[str] = []
-        for platform in PLATFORM_ORDER:
-            missing = [env_key for env_key in PLATFORM_DETAILS[platform]["env"] if not updates.get(env_key)]
-            if missing:
-                self._set_settings_credential_status(platform, "Unverified", "Muted.TLabel")
-                row = self.account_rows.get(platform)
-                if row:
-                    row["test_result"].set("Unverified: complete the Settings credentials first.")
-                    row["test_result_label"].configure(style="PanelMuted.TLabel")
-                continue
-            platforms_to_test.append(platform)
-            self._set_settings_credential_status(platform, "Testing...", "Muted.TLabel")
-            row = self.account_rows.get(platform)
-            if row:
-                row["test"].configure(state="disabled")
-                row["test_result"].set("Posting private test video...")
-                row["test_result_label"].configure(style="PanelWarn.TLabel")
-
-        if not platforms_to_test:
-            self.credentials_status_var.set("All incomplete credential sets were left unverified.")
-            return
-
-        self.credentials_status_var.set("Saving credentials, refreshing API, then running post/delete tests...")
-        self.status_var.set("Running credential post/delete tests...")
-        self.credentials_save_button.configure(state="disabled")
-        if hasattr(self, "credentials_post_delete_button"):
-            self.credentials_post_delete_button.configure(state="disabled")
-        for button in self.credential_test_buttons.values():
-            button.configure(state="disabled")
-
-        def runner() -> None:
-            try:
-                _write_local_env_values(updates)
-                self._refresh_backend_service()
-                self._wait_for_api()
-            except Exception as exc:  # noqa: BLE001
-                self.results_queue.put(("credential-post-delete-suite-error", str(exc)))
-                self.results_queue.put(("credential-post-delete-suite-finished", None))
-                return
-
-            for platform in platforms_to_test:
-                try:
-                    result = self.client.oauth_post_delete_test_credentials(platform)
-                    status = result.get("status")
-                    message = result.get("message") or f"{platform.title()} post/delete test finished."
-                    if status == "verified":
-                        action = "credential-post-delete-ok"
-                    elif status == "unverified":
-                        action = "credential-post-delete-unverified"
-                    else:
-                        action = "credential-post-delete-error"
-                    self.results_queue.put((action, {"platform": platform, "message": message}))
-                except Exception as exc:  # noqa: BLE001
-                    self.results_queue.put(
-                        (
-                            "credential-post-delete-error",
-                            {"platform": platform, "message": str(exc)},
-                        )
-                    )
-
-            self.results_queue.put(("credential-post-delete-suite-finished", None))
-
-        threading.Thread(target=runner, daemon=True).start()
 
     def load_workspace_data(self) -> None:
         def work() -> dict[str, Any]:
@@ -3380,6 +3342,7 @@ class ReelPushDesktop(tk.Tk):
         runtime = payload.get("runtime", {})
         self.latest_platform_statuses = statuses
         self.latest_staged = staged
+        self.latest_runtime_statuses = runtime
 
         self._set_entry_value(self.title_entry, profile.get("default_title") or "")
 
@@ -3407,7 +3370,7 @@ class ReelPushDesktop(tk.Tk):
             status = statuses.get(key, {})
             ok = bool(status.get("ok"))
             label = status.get("label") or ("Online" if ok else "Offline")
-            detail = str(status.get("detail") or LOCAL_SERVICES[key]).replace("\n", " ")
+            detail = str(status.get("detail") or LOCAL_SERVICES.get(key, key)).replace("\n", " ")
             if len(detail) > 58:
                 detail = f"{detail[:55]}..."
             row["status"].set(label)
@@ -3458,6 +3421,9 @@ class ReelPushDesktop(tk.Tk):
         schedule_value = self.schedule_var.get().strip() if hasattr(self, "schedule_var") else ""
         diagnostics = [self._platform_diagnostics(status) for status in statuses if status["platform"] in selected]
         diagnosed_platforms = {item["platform"] for item in diagnostics}
+        runtime_statuses = getattr(self, "latest_runtime_statuses", {})
+        runtime_blockers = self._runtime_publish_blockers(runtime_statuses) if runtime_statuses else ["Checking network connection."]
+        network_ok = not runtime_blockers
 
         title_ok = 0 < len(title) <= 100
         caption_ok = 0 < len(caption) <= 2200
@@ -3495,6 +3461,7 @@ class ReelPushDesktop(tk.Tk):
         )
 
         checks = {
+            "network": ("complete" if network_ok else "missing", "Ready" if network_ok else " ".join(runtime_blockers)),
             "video": ("complete" if has_upload else "missing", "Ready" if has_upload else "Choose a video in the publish panel."),
             "details": (details_state, details_detail or "Add title and caption."),
             "platform_selected": ("complete" if platform_selected_ok else "missing", platform_selected_detail),
@@ -3535,6 +3502,10 @@ class ReelPushDesktop(tk.Tk):
         elif not has_upload:
             summary = "Missing video"
             summary_detail = "Choose a video before publishing."
+            summary_style = "PanelBad.TLabel"
+        elif not network_ok:
+            summary = "Network unavailable"
+            summary_detail = " ".join(runtime_blockers)
             summary_style = "PanelBad.TLabel"
         elif not platform_selected_ok:
             summary = "No platforms selected"
@@ -3581,7 +3552,7 @@ class ReelPushDesktop(tk.Tk):
         platforms_status = "Ready" if platform_selected_ok else "Incomplete"
         validate_status = "Ready" if ready_to_publish else (
             "Needs Attention"
-            if details_state == "warning" or credentials_state != "complete" or schedule_state != "complete"
+            if not network_ok or details_state == "warning" or credentials_state != "complete" or schedule_state != "complete"
             else "Incomplete"
         )
         self._update_workflow_status(
@@ -3701,6 +3672,20 @@ class ReelPushDesktop(tk.Tk):
                 "Scheduled desktop publishing is not wired into this local flow yet. Clear Schedule to publish now.",
             )
             return
+        self.status_var.set("Checking network connection…")
+        runtime_statuses = self._collect_runtime_statuses()
+        self.latest_runtime_statuses = runtime_statuses
+        self._apply_runtime_statuses(runtime_statuses)
+        runtime_blockers = self._runtime_publish_blockers(runtime_statuses)
+        if runtime_blockers:
+            self._refresh_delivery_readiness()
+            self._show_publish_blocked_reason("Network unavailable", runtime_blockers)
+            messagebox.showwarning(
+                "Network unavailable",
+                "ReelPush needs a working network connection before posting.\n\n" + "\n".join(runtime_blockers),
+            )
+            self.status_var.set("Publish blocked: network unavailable.")
+            return
         statuses_by_platform = {
             status.get("platform"): status
             for status in getattr(self, "latest_platform_statuses", [])
@@ -3732,12 +3717,26 @@ class ReelPushDesktop(tk.Tk):
 
         self._run_bg(work, "published")
 
+    def _show_publish_blocked_reason(self, title: str, reasons: list[str]) -> None:
+        if not hasattr(self, "publish_log"):
+            return
+        self.publish_log.configure(state="normal")
+        self.publish_log.delete("1.0", "end")
+        self.publish_log.insert("end", f"Status:   Blocked\n")
+        self.publish_log.insert("end", f"Reason:   {title}\n")
+        for reason in reasons:
+            self.publish_log.insert("end", f"Detail:   {reason}\n")
+        self.publish_log.configure(state="disabled")
+
     def _show_publish_results(self, jobs: list[dict[str, Any]]) -> None:
         self.publish_log.configure(state="normal")
         self.publish_log.delete("1.0", "end")
         for job in jobs:
             self.publish_log.insert("end", f"Platform: {job['platform']}\n")
             self.publish_log.insert("end", f"Status:   {job['status']}\n")
+            error_message = job.get("error_message") or job.get("last_error")
+            if error_message:
+                self.publish_log.insert("end", f"Reason:   {error_message}\n")
             if job.get("platform_post_url"):
                 self.publish_log.insert("end", f"Post URL: {job['platform_post_url']}\n")
             if job.get("platform_post_id"):

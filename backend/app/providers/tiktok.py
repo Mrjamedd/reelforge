@@ -23,7 +23,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import get_effective_cred, get_settings
 from app.core.logging import get_logger
 from app.core.security import decrypt_token
 from app.models.models import PlatformAccount
@@ -55,7 +55,7 @@ class TikTokProvider(PlatformProvider):
 
     @property
     def is_configured(self) -> bool:
-        return settings.tiktok_configured
+        return bool(get_effective_cred("tiktok_client_key") and get_effective_cred("tiktok_client_secret"))
 
     @property
     def requires_app_review(self) -> bool:
@@ -74,7 +74,7 @@ class TikTokProvider(PlatformProvider):
         code_challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
 
         params = {
-            "client_key": settings.tiktok_client_key,
+            "client_key": get_effective_cred("tiktok_client_key"),
             "scope": REQUIRED_SCOPES,
             "response_type": "code",
             "redirect_uri": redirect_uri,
@@ -94,8 +94,8 @@ class TikTokProvider(PlatformProvider):
             resp = await client.post(
                 TIKTOK_TOKEN_URL,
                 data={
-                    "client_key": settings.tiktok_client_key,
-                    "client_secret": settings.tiktok_client_secret,
+                    "client_key": get_effective_cred("tiktok_client_key"),
+                    "client_secret": get_effective_cred("tiktok_client_secret"),
                     "code": code,
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri,
@@ -127,8 +127,8 @@ class TikTokProvider(PlatformProvider):
             resp = await client.post(
                 TIKTOK_TOKEN_URL,
                 data={
-                    "client_key": settings.tiktok_client_key,
-                    "client_secret": settings.tiktok_client_secret,
+                    "client_key": get_effective_cred("tiktok_client_key"),
+                    "client_secret": get_effective_cred("tiktok_client_secret"),
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
                 },

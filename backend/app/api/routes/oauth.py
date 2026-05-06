@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.config import get_settings
+from app.core.config import get_effective_cred, get_settings
 from app.core.security import decrypt_token
 from app.db.session import get_db
 from app.models.models import AdminUser, Platform, PlatformAccount
@@ -49,7 +49,7 @@ def _missing_credentials(platform: Platform) -> list[str]:
     return [
         name
         for name in REQUIRED_CREDENTIALS.get(platform, ())
-        if not getattr(settings, SETTINGS_CREDENTIAL_ATTRS[name], "")
+        if not get_effective_cred(SETTINGS_CREDENTIAL_ATTRS[name])
     ]
 
 

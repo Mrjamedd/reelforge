@@ -37,6 +37,7 @@ async def seed():
             email=settings.admin_email,
             hashed_password=hash_password(settings.admin_password),
             is_active=True,
+            is_email_verified=True,  # Pre-verified seed account
         )
         db.add(user)
         await db.commit()

@@ -30,7 +30,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import get_effective_cred, get_settings
 from app.core.logging import get_logger
 from app.core.security import decrypt_token
 from app.models.models import PlatformAccount
@@ -63,7 +63,7 @@ class InstagramProvider(PlatformProvider):
 
     @property
     def is_configured(self) -> bool:
-        return settings.instagram_configured
+        return bool(get_effective_cred("instagram_app_id") and get_effective_cred("instagram_app_secret"))
 
     @property
     def requires_app_review(self) -> bool:
@@ -74,7 +74,7 @@ class InstagramProvider(PlatformProvider):
 
     def get_auth_url(self, redirect_uri: str, state: str) -> OAuthConfig:
         params = {
-            "client_id": settings.instagram_app_id,
+            "client_id": get_effective_cred("instagram_app_id"),
             "redirect_uri": redirect_uri,
             "scope": REQUIRED_SCOPES,
             "response_type": "code",
@@ -94,8 +94,8 @@ class InstagramProvider(PlatformProvider):
             resp = await client.get(
                 META_TOKEN_URL,
                 params={
-                    "client_id": settings.instagram_app_id,
-                    "client_secret": settings.instagram_app_secret,
+                    "client_id": get_effective_cred("instagram_app_id"),
+                    "client_secret": get_effective_cred("instagram_app_secret"),
                     "redirect_uri": redirect_uri,
                     "code": code,
                 },
@@ -109,8 +109,8 @@ class InstagramProvider(PlatformProvider):
                 f"{GRAPH_API_BASE}/oauth/access_token",
                 params={
                     "grant_type": "fb_exchange_token",
-                    "client_id": settings.instagram_app_id,
-                    "client_secret": settings.instagram_app_secret,
+                    "client_id": get_effective_cred("instagram_app_id"),
+                    "client_secret": get_effective_cred("instagram_app_secret"),
                     "fb_exchange_token": short_token,
                 },
             )
@@ -149,8 +149,8 @@ class InstagramProvider(PlatformProvider):
                 f"{GRAPH_API_BASE}/oauth/access_token",
                 params={
                     "grant_type": "fb_exchange_token",
-                    "client_id": settings.instagram_app_id,
-                    "client_secret": settings.instagram_app_secret,
+                    "client_id": get_effective_cred("instagram_app_id"),
+                    "client_secret": get_effective_cred("instagram_app_secret"),
                     "fb_exchange_token": access_token,
                 },
             )

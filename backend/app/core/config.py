@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     r2_account_id: str = ""  # Optional: set S3_ENDPOINT_URL automatically for R2
 
     # Admin seed
-    admin_email: str = "admin@example.com"
-    admin_password: str = "changeme123!"
+    admin_email: str = "mr6jam3@gmail.com"
+    admin_password: str = "HoppersGo29"
 
     # App URLs
     api_url: str = "http://localhost:8000"
@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     # YouTube / Google — TODO: requires Google Cloud credentials
     youtube_client_id: str = ""
     youtube_client_secret: str = ""
+
+    # SMTP — for email verification
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
 
     @property
     def tiktok_configured(self) -> bool:
@@ -76,7 +83,27 @@ class Settings(BaseSettings):
     def youtube_configured(self) -> bool:
         return bool(self.youtube_client_id and self.youtube_client_secret)
 
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# Runtime platform credential overrides (DB values take precedence over env vars).
+_runtime_creds: dict[str, str] = {}
+
+
+def set_runtime_creds(creds: dict[str, str]) -> None:
+    """Override platform credentials at runtime without restarting the server."""
+    for k, v in creds.items():
+        if v:
+            _runtime_creds[k] = v
+
+
+def get_effective_cred(attr_name: str) -> str:
+    """Return a platform credential, preferring runtime DB overrides over env vars."""
+    return _runtime_creds.get(attr_name) or getattr(get_settings(), attr_name, "")

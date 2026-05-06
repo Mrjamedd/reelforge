@@ -17,18 +17,54 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class MessageResponse(BaseModel):
+    message: str
 
 
 class AdminUserOut(BaseModel):
     id: uuid.UUID
     email: str
     is_active: bool
+    is_email_verified: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AppSettingsOut(BaseModel):
+    youtube_client_id: str | None = None
+    youtube_client_secret: str | None = None
+    instagram_app_id: str | None = None
+    instagram_app_secret: str | None = None
+    tiktok_client_key: str | None = None
+    tiktok_client_secret: str | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AppSettingsUpdate(BaseModel):
+    youtube_client_id: str | None = None
+    youtube_client_secret: str | None = None
+    instagram_app_id: str | None = None
+    instagram_app_secret: str | None = None
+    tiktok_client_key: str | None = None
+    tiktok_client_secret: str | None = None
 
 
 # ─── Platform Account ─────────────────────────────────────────────────────────

@@ -1,11 +1,17 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.config import set_runtime_creds
+from app.core.security import decrypt_token, encrypt_token
 from app.db.session import get_db
-from app.models.models import AdminUser, PublishJob, PublishProfile, StagedPublish, Upload
+from app.models.models import AdminUser, PublishJob, PublishProfile, StagedPublish, Upload, UserAppSettings
 from app.schemas.schemas import (
+    AppSettingsOut,
+    AppSettingsUpdate,
     PublishProfileOut,
     PublishProfileUpdate,
     PublishJobOut,
@@ -15,6 +21,17 @@ from app.schemas.schemas import (
     WorkspacePublishRequest,
 )
 from app.services.workspace_service import WorkspaceService
+
+
+def _encrypt_settings(data: dict) -> str:
+    return encrypt_token(json.dumps(data))
+
+
+def _decrypt_settings(enc: str) -> dict:
+    try:
+        return json.loads(decrypt_token(enc))
+    except Exception:
+        return {}
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 workspace_svc = WorkspaceService()
@@ -121,3 +138,60 @@ async def publish_now_workspace(
         return [PublishJobOut.model_validate(job) for job in jobs]
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/app-settings", response_model=AppSettingsOut)
+async def get_app_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(UserAppSettings).where(UserAppSettings.admin_user_id == current_user.id)
+    )
+    row = result.scalar_one_or_none()
+    if not row or not row.credentials_enc:
+        return AppSettingsOut()
+    data = _decrypt_settings(row.credentials_enc)
+    return AppSettingsOut(updated_at=row.updated_at, **data)
+
+
+@router.put("/app-settings", response_model=AppSettingsOut)
+async def update_app_settings(
+    body: AppSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(UserAppSettings).where(UserAppSettings.admin_user_id == current_user.id)
+    )
+    row = result.scalar_one_or_none()
+
+    # Merge new values over existing (only update non-None fields)
+    existing: dict = {}
+    if row and row.credentials_enc:
+        existing = _decrypt_settings(row.credentials_enc)
+
+    updates = body.model_dump(exclude_none=True)
+    merged = {**existing, **updates}
+
+    if row is None:
+        row = UserAppSettings(admin_user_id=current_user.id, credentials_enc=_encrypt_settings(merged))
+        db.add(row)
+    else:
+        row.credentials_enc = _encrypt_settings(merged)
+
+    await db.commit()
+    await db.refresh(row)
+
+    # Apply to runtime so the server uses them immediately without restart
+    cred_map = {
+        "youtube_client_id": merged.get("youtube_client_id", ""),
+        "youtube_client_secret": merged.get("youtube_client_secret", ""),
+        "instagram_app_id": merged.get("instagram_app_id", ""),
+        "instagram_app_secret": merged.get("instagram_app_secret", ""),
+        "tiktok_client_key": merged.get("tiktok_client_key", ""),
+        "tiktok_client_secret": merged.get("tiktok_client_secret", ""),
+    }
+    set_runtime_creds(cred_map)
+
+    return AppSettingsOut(updated_at=row.updated_at, **merged)
