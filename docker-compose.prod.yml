@@ -47,6 +47,17 @@ services:
       timeout: 3s
       retries: 5
 
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    mem_limit: 32m
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+
   backend:
     build:
       context: ./backend
@@ -64,8 +75,6 @@ services:
       ENVIRONMENT: production
     volumes:
       - ./storage:/storage
-    ports:
-      - "127.0.0.1:8100:8000"
     depends_on:
       db:
         condition: service_healthy
