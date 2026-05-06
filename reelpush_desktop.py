@@ -1517,18 +1517,9 @@ class ReelPushDesktop(tk.Tk):
         ttk.Label(panel, text="Welcome to ReelPush", style="Heading.TLabel").pack(anchor="w")
         ttk.Label(
             panel,
-            text="Sign in to the official ReelPush server, or connect to your own.",
+            text="Sign in with your ReelPush account.",
             style="Subheading.TLabel",
         ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
-
-        ttk.Label(panel, text="SERVER URL", style="Micro.TLabel").pack(anchor="w")
-        url_surface, url_entry = self._make_entry_field(panel, bg_color=self.colors["panel"])
-        url_entry.insert(0, OFFICIAL_SERVER_URL)
-        url_surface.pack(fill="x", pady=(4, 0))
-
-        url_hint_row = ttk.Frame(panel, style="Panel.TFrame")
-        url_hint_row.pack(fill="x", pady=(SPACING["xs"], SPACING["md"]))
-        ttk.Label(url_hint_row, text="Official server is pre-filled. Change only if using a personal server.", style="FieldHelp.TLabel").pack(side="left")
 
         creds_row = ttk.Frame(panel, style="Panel.TFrame")
         creds_row.pack(fill="x")
@@ -1557,12 +1548,9 @@ class ReelPushDesktop(tk.Tk):
         connect_button: list[ttk.Button] = []
 
         def do_connect() -> None:
-            url = url_entry.get().strip().rstrip("/")
+            url = OFFICIAL_SERVER_URL
             email = email_entry.get().strip()
             password = pw_entry.get().strip()
-            if not url:
-                status_var.set("Enter a server URL first.")
-                return
             status_var.set("Connecting…")
             if connect_button:
                 connect_button[0].configure(state="disabled")
@@ -1592,12 +1580,8 @@ class ReelPushDesktop(tk.Tk):
         connect_button.append(btn)
 
         def do_first_run_register() -> None:
-            url = url_entry.get().strip().rstrip("/")
-            if not url:
-                status_var.set("Enter a server URL before creating an account.")
-                return
-            _set_active_api_url(url)
-            self.desktop_settings["server_url"] = url
+            _set_active_api_url(OFFICIAL_SERVER_URL)
+            self.desktop_settings["server_url"] = OFFICIAL_SERVER_URL
             _save_desktop_settings(self.desktop_settings)
             self.show_register()
 
@@ -1648,12 +1632,11 @@ class ReelPushDesktop(tk.Tk):
         panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
         panel.place(relx=0.5, rely=0.5, anchor="center")
 
-        server_url = self.desktop_settings.get("server_url", API_ROOT)
         login_email_default = self.desktop_settings.get("login_email", "")
         login_password_default = self.desktop_settings.get("login_password", "")
-        subtitle = f"Sign in to {server_url}."
+        subtitle = "Sign in to your ReelPush account."
         if error_message:
-            subtitle = f"Could not sign in to {server_url}. Enter your credentials to continue."
+            subtitle = "Sign in failed. Check your credentials and try again."
 
         ttk.Label(panel, text="Sign in", style="Heading.TLabel").pack(anchor="w")
         ttk.Label(panel, text=subtitle, style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
