@@ -217,69 +217,69 @@ LOCAL_SERVICES = {
 }
 
 BASE_COLORS = {
-    "bg": "#16171B",
-    "panel": "#1E1F23",
-    "soft_panel": "#25262B",
-    "field": "#23242A",
-    "field_hover": "#292A30",
-    "log": "#17181C",
-    "text": "#EAE7E3",
-    "muted": "#A6A6AB",
-    "subtle": "#74757B",
-    "border": "#363740",
-    "border_soft": "#2E2F36",
-    "focus": "#5E514B",
-    "secondary": "#2A2B31",
-    "secondary_hover": "#303138",
-    "disabled": "#24252A",
-    "disabled_text": "#6E6F75",
-    "good": "#7BC096",
-    "warn": "#E5B86F",
-    "bad": "#E08585",
+    "bg": "#101113",
+    "panel": "#17191D",
+    "soft_panel": "#202328",
+    "field": "#111418",
+    "field_hover": "#181D22",
+    "log": "#0B0D10",
+    "text": "#F2F0EA",
+    "muted": "#B8B4AA",
+    "subtle": "#817D75",
+    "border": "#343942",
+    "border_soft": "#262B33",
+    "focus": "#6B5E4B",
+    "secondary": "#262A30",
+    "secondary_hover": "#303640",
+    "disabled": "#1B1E23",
+    "disabled_text": "#676C74",
+    "good": "#6FD39B",
+    "warn": "#F0B866",
+    "bad": "#F07D75",
 }
 
 ACCENT_PRESETS = {
     "red": {
-        "name": "Warm Coral",
-        "description": "A calm coral accent with a Claude-inspired editorial warmth.",
-        "accent": "#D97757",
-        "accent_hover": "#E18466",
-        "accent_panel": "#2D2421",
+        "name": "Punch Coral",
+        "description": "A direct studio accent for primary publishing actions.",
+        "accent": "#F26D4D",
+        "accent_hover": "#FF7E61",
+        "accent_panel": "#2C1D18",
     },
     "blue": {
-        "name": "Slate Blue",
-        "description": "Cool operations accent for a measured production workspace.",
-        "accent": "#6F93B5",
-        "accent_hover": "#7FA1C0",
-        "accent_panel": "#222936",
+        "name": "Monitor Cyan",
+        "description": "A crisp telemetry accent for server and readiness states.",
+        "accent": "#48B7C7",
+        "accent_hover": "#62C9D8",
+        "accent_panel": "#14282D",
     },
     "green": {
-        "name": "Sage",
-        "description": "Muted readiness accent with a calm control-room tone.",
-        "accent": "#88A47B",
-        "accent_hover": "#96B08A",
-        "accent_panel": "#242C25",
+        "name": "Ready Green",
+        "description": "A clean signal color for review-ready publishing work.",
+        "accent": "#6CCB8E",
+        "accent_hover": "#7CDB9E",
+        "accent_panel": "#16271D",
     },
     "purple": {
-        "name": "Mauve",
-        "description": "Deep violet accent, kept dark and compact for desktop use.",
-        "accent": "#A188B5",
-        "accent_hover": "#AF98C1",
-        "accent_panel": "#2A2633",
+        "name": "Edit Violet",
+        "description": "A restrained review accent for copy and credential work.",
+        "accent": "#B094E8",
+        "accent_hover": "#BEA5F2",
+        "accent_panel": "#241E34",
     },
     "orange": {
-        "name": "Burnt Umber",
-        "description": "Burnt orange accent for stronger calls to action without glare.",
-        "accent": "#C98A5E",
-        "accent_hover": "#D49A70",
-        "accent_panel": "#302720",
+        "name": "Signal Amber",
+        "description": "A warm production-light accent for the current workspace.",
+        "accent": "#F08D3C",
+        "accent_hover": "#FF9F50",
+        "accent_panel": "#2C2116",
     },
     "neutral": {
-        "name": "Graphite",
-        "description": "Low-saturation gray accent for the quietest professional layout.",
-        "accent": "#9A9A94",
-        "accent_hover": "#A8A8A2",
-        "accent_panel": "#292A2D",
+        "name": "Graphite White",
+        "description": "A spare monochrome accent for the quietest control room.",
+        "accent": "#D7D0C4",
+        "accent_hover": "#E5DED2",
+        "accent_panel": "#252522",
     },
 }
 
@@ -306,27 +306,27 @@ LEGACY_THEME_MAP = {
 DEFAULT_THEME = "red"
 SPACING = {
     "xs": 4,
-    "sm": 8,
-    "md": 12,
-    "lg": 16,
-    "xl": 24,
-    "xxl": 32,
+    "sm": 7,
+    "md": 11,
+    "lg": 15,
+    "xl": 22,
+    "xxl": 28,
 }
 TYPE_SCALE = {
-    "display": (26, "600"),
-    "h1": (20, "600"),
+    "display": (30, "600"),
+    "h1": (22, "600"),
     "h2": (16, "600"),
     "body": (14, "400"),
     "body_strong": (14, "500"),
     "small": (12, "400"),
-    "micro": (11, "500"),
+    "micro": (10, "500"),
 }
-RADIUS_PANEL = 14
-RADIUS_CARD = 12
-RADIUS_INPUT = 10
-RADIUS_CHIP = 8
-PADDING_PANEL = 28
-PADDING_CARD = 20
+RADIUS_PANEL = 8
+RADIUS_CARD = 6
+RADIUS_INPUT = 5
+RADIUS_CHIP = 4
+PADDING_PANEL = 22
+PADDING_CARD = 16
 PADDING_FIELD_X = SPACING["md"]
 PADDING_FIELD_Y = SPACING["sm"]
 
@@ -384,7 +384,7 @@ class RoundedFrame(tk.Frame):
 
     @property
     def _shadow_offset(self) -> int:
-        return 2 if self.shadow else 0
+        return 1 if self.shadow else 0
 
     def set_fill(self, fill_color: str) -> None:
         self.fill_color = fill_color
@@ -421,8 +421,7 @@ class RoundedFrame(tk.Frame):
             return
         edge = 1
         if self.shadow:
-            self._rounded_rect(2, 3, width - 1, height - 1, self.radius, "#101116", "surface")
-            self._rounded_rect(1, 2, width - 2, height - 2, self.radius, "#1A1B20", "surface")
+            self._rounded_rect(1, 2, width - 1, height - 1, self.radius, "#08090B", "surface")
         self._rounded_rect(
             edge,
             edge,
@@ -805,8 +804,8 @@ class ReelPushDesktop(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("1180x900")
-        self.minsize(920, 640)
+        self.geometry("1180x860")
+        self.minsize(960, 620)
 
         self.client = ApiClient()
         self.results_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -836,7 +835,7 @@ class ReelPushDesktop(tk.Tk):
         self.container = ttk.Frame(
             self,
             style="Shell.TFrame",
-            padding=(SPACING["xxl"], SPACING["xl"], SPACING["xxl"], SPACING["xl"]),
+            padding=(SPACING["xxl"], SPACING["lg"], SPACING["xxl"], SPACING["lg"]),
         )
         self.container.pack(fill="both", expand=True)
 
@@ -852,10 +851,13 @@ class ReelPushDesktop(tk.Tk):
         colors = self.colors
 
         available_fonts = set(tkfont.families(self))
-        body_family = self._pick_font_family(available_fonts, ["Inter", "SF Pro Text", "Helvetica Neue", "Arial"])
+        body_family = self._pick_font_family(
+            available_fonts,
+            ["Avenir Next", "SF Pro Text", "Helvetica Neue", "TkDefaultFont"],
+        )
         heading_family = self._pick_font_family(
             available_fonts,
-            ["Inter", "SF Pro Display", body_family, "Helvetica Neue", "Arial"],
+            ["Avenir Next Condensed", "DIN Alternate", "Avenir Next", "SF Pro Display", body_family],
         )
 
         default_font = tkfont.nametofont("TkDefaultFont")
@@ -880,13 +882,19 @@ class ReelPushDesktop(tk.Tk):
         style.configure("SoftPanel.TFrame", background=colors["soft_panel"])
         style.configure("AccentPanel.TFrame", background=colors["accent_panel"])
         style.configure("Card.TFrame", background=colors["panel"])
+        style.configure("Ribbon.TFrame", background=colors["bg"])
         style.configure("Tile.TFrame", background=colors["soft_panel"])
         style.configure("Card.TLabelframe", background=colors["panel"], foreground=colors["text"])
         style.configure("Card.TLabelframe.Label", background=colors["panel"], foreground=colors["text"], font=self.section_font)
+        style.configure("Display.TLabel", background=colors["bg"], foreground=colors["text"], font=self.display_font)
+        style.configure("HeroKicker.TLabel", background=colors["bg"], foreground=colors["accent"], font=self.meta_font)
         style.configure("Heading.TLabel", background=colors["bg"], foreground=colors["text"], font=self.heading_font)
         style.configure("Subheading.TLabel", background=colors["bg"], foreground=colors["muted"], font=self.subheading_font)
+        style.configure("RibbonMuted.TLabel", background=colors["bg"], foreground=colors["subtle"], font=self.muted_font)
         style.configure("Workspace.TLabel", background=colors["bg"], foreground=colors["text"], font=self.body_font)
         style.configure("WorkspaceMuted.TLabel", background=colors["bg"], foreground=colors["muted"], font=self.muted_font)
+        style.configure("AuthTitle.TLabel", background=colors["panel"], foreground=colors["text"], font=self.heading_font)
+        style.configure("AuthSubtitle.TLabel", background=colors["panel"], foreground=colors["muted"], font=self.subheading_font)
         style.configure("CardTitle.TLabel", background=colors["panel"], foreground=colors["text"], font=self.section_font)
         style.configure("CardSubtitle.TLabel", background=colors["panel"], foreground=colors["muted"], font=self.muted_font)
         style.configure("Body.TLabel", background=colors["panel"], foreground=colors["text"], font=self.body_font)
@@ -912,13 +920,13 @@ class ReelPushDesktop(tk.Tk):
         style.configure("SelectedPanelSmallGood.TLabel", background=colors["accent_panel"], foreground=colors["good"], font=self.meta_font)
         style.configure("SelectedPanelSmallWarn.TLabel", background=colors["accent_panel"], foreground=colors["warn"], font=self.meta_font)
         style.configure("SelectedPanelSmallBad.TLabel", background=colors["accent_panel"], foreground=colors["bad"], font=self.meta_font)
-        button_padding = (SPACING["md"], SPACING["sm"])
-        accent_padding = (SPACING["lg"], SPACING["sm"])
+        button_padding = (SPACING["lg"], SPACING["sm"])
+        accent_padding = (SPACING["xl"], SPACING["sm"])
         style.configure(
             "Accent.TButton",
             background=colors["accent"],
             foreground="#FAF7F4",
-            borderwidth=1,
+            borderwidth=0,
             bordercolor=colors["accent"],
             focusthickness=0,
             relief="flat",
@@ -933,7 +941,7 @@ class ReelPushDesktop(tk.Tk):
         )
         style.configure(
             "Secondary.TButton",
-            background=colors["panel"],
+            background=colors["secondary"],
             foreground=colors["text"],
             borderwidth=1,
             bordercolor=colors["border"],
@@ -950,10 +958,10 @@ class ReelPushDesktop(tk.Tk):
         )
         style.configure(
             "Tertiary.TButton",
-            background=colors["panel"],
+            background=colors["soft_panel"],
             foreground=colors["muted"],
             borderwidth=0,
-            bordercolor=colors["panel"],
+            bordercolor=colors["soft_panel"],
             focusthickness=0,
             relief="flat",
             padding=button_padding,
@@ -977,6 +985,7 @@ class ReelPushDesktop(tk.Tk):
             borderwidth=0,
             relief="flat",
             padding=(SPACING["md"], SPACING["sm"]),
+            font=self.body_font,
         )
         style.map(
             "TEntry",
@@ -992,6 +1001,7 @@ class ReelPushDesktop(tk.Tk):
             borderwidth=0,
             relief="flat",
             padding=(SPACING["md"], SPACING["sm"]),
+            font=self.body_font,
         )
         style.map(
             "TCombobox",
@@ -999,11 +1009,24 @@ class ReelPushDesktop(tk.Tk):
             foreground=[("readonly", colors["text"]), ("disabled", colors["disabled_text"])],
             arrowcolor=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
         )
-        style.configure("Vertical.TScrollbar", background=colors["secondary"], troughcolor=colors["bg"], borderwidth=0, arrowsize=10)
+        style.configure(
+            "Vertical.TScrollbar",
+            background=colors["secondary"],
+            troughcolor=colors["bg"],
+            borderwidth=0,
+            arrowsize=8,
+            width=10,
+        )
         style.configure("TCheckbutton", background=colors["panel"], foreground=colors["text"])
         style.map("TCheckbutton", background=[("active", colors["panel"])], foreground=[("active", colors["text"])])
         style.configure("Panel.TCheckbutton", background=colors["soft_panel"], foreground=colors["text"])
         style.map("Panel.TCheckbutton", background=[("active", colors["soft_panel"])], foreground=[("active", colors["text"])])
+        style.configure("TRadiobutton", background=colors["panel"], foreground=colors["text"], font=self.body_font)
+        style.map(
+            "TRadiobutton",
+            background=[("active", colors["panel"]), ("selected", colors["panel"])],
+            foreground=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
+        )
         style.configure("Accent.Horizontal.TProgressbar", troughcolor=colors["soft_panel"], background=colors["accent"])
 
     @staticmethod
@@ -1467,17 +1490,29 @@ class ReelPushDesktop(tk.Tk):
         self.dropdown_fields.append(field)
         return field
 
+    def _make_center_panel(self) -> tk.Frame:
+        surface = RoundedFrame(
+            self.container,
+            bg_color=self.colors["bg"],
+            fill_color=self.colors["panel"],
+            radius=RADIUS_PANEL,
+            padding=SPACING["xxl"],
+            outline_color=self.colors["border_soft"],
+            shadow=False,
+        )
+        surface.place(relx=0.5, rely=0.5, anchor="center")
+        return surface.body
+
     def show_bootstrap(self) -> None:
         self._clear_container()
 
-        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
-        panel.place(relx=0.5, rely=0.5, anchor="center")
+        panel = self._make_center_panel()
 
-        ttk.Label(panel, text=APP_NAME, style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(panel, text=APP_NAME, style="AuthTitle.TLabel").pack(anchor="w")
         ttk.Label(
             panel,
             text="Starting services and preparing your workspace.",
-            style="Subheading.TLabel",
+            style="AuthSubtitle.TLabel",
         ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
 
         self.bootstrap_status = tk.StringVar(value="Starting services…")
@@ -1511,14 +1546,13 @@ class ReelPushDesktop(tk.Tk):
     def show_first_run(self) -> None:
         self._clear_container()
 
-        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
-        panel.place(relx=0.5, rely=0.5, anchor="center")
+        panel = self._make_center_panel()
 
-        ttk.Label(panel, text="Welcome to ReelPush", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(panel, text="Welcome to ReelPush", style="AuthTitle.TLabel").pack(anchor="w")
         ttk.Label(
             panel,
             text="Sign in with your ReelPush account.",
-            style="Subheading.TLabel",
+            style="AuthSubtitle.TLabel",
         ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
 
         creds_row = ttk.Frame(panel, style="Panel.TFrame")
@@ -1629,8 +1663,7 @@ class ReelPushDesktop(tk.Tk):
     def show_login(self, error_message: str | None = None) -> None:
         self._clear_container()
 
-        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
-        panel.place(relx=0.5, rely=0.5, anchor="center")
+        panel = self._make_center_panel()
 
         login_email_default = self.desktop_settings.get("login_email", "")
         login_password_default = self.desktop_settings.get("login_password", "")
@@ -1638,8 +1671,8 @@ class ReelPushDesktop(tk.Tk):
         if error_message:
             subtitle = "Sign in failed. Check your credentials and try again."
 
-        ttk.Label(panel, text="Sign in", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(panel, text=subtitle, style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+        ttk.Label(panel, text="Sign in", style="AuthTitle.TLabel").pack(anchor="w")
+        ttk.Label(panel, text=subtitle, style="AuthSubtitle.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
         if error_message:
             error_var = tk.StringVar(value=error_message)
             ttk.Label(panel, textvariable=error_var, style="Muted.TLabel", wraplength=420).pack(anchor="w", pady=(0, SPACING["xl"]))
@@ -1692,11 +1725,10 @@ class ReelPushDesktop(tk.Tk):
     def show_register(self) -> None:
         self._clear_container()
 
-        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
-        panel.place(relx=0.5, rely=0.5, anchor="center")
+        panel = self._make_center_panel()
 
-        ttk.Label(panel, text="Create Account", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(panel, text="Register a new account on this ReelPush server.", style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+        ttk.Label(panel, text="Create Account", style="AuthTitle.TLabel").pack(anchor="w")
+        ttk.Label(panel, text="Register a new account on this ReelPush server.", style="AuthSubtitle.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
 
         self.reg_error_var = tk.StringVar(value="")
         self.reg_error_label = ttk.Label(panel, textvariable=self.reg_error_var, style="Muted.TLabel", wraplength=420)
@@ -1755,11 +1787,10 @@ class ReelPushDesktop(tk.Tk):
     def show_verify_email(self, email: str) -> None:
         self._clear_container()
 
-        panel = ttk.Frame(self.container, style="Panel.TFrame", padding=SPACING["xxl"])
-        panel.place(relx=0.5, rely=0.5, anchor="center")
+        panel = self._make_center_panel()
 
-        ttk.Label(panel, text="Verify Your Email", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(panel, text=f"A 6-digit code was sent to {email}.\nIt expires in 35 minutes.", style="Subheading.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
+        ttk.Label(panel, text="Verify Your Email", style="AuthTitle.TLabel").pack(anchor="w")
+        ttk.Label(panel, text=f"A 6-digit code was sent to {email}.\nIt expires in 35 minutes.", style="AuthSubtitle.TLabel", wraplength=420).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
 
         self.verify_error_var = tk.StringVar(value="")
         ttk.Label(panel, textvariable=self.verify_error_var, style="Muted.TLabel", wraplength=420).pack(anchor="w")
@@ -1810,29 +1841,30 @@ class ReelPushDesktop(tk.Tk):
         self.account_var = tk.StringVar(value=self.user_email)
 
         header = ttk.Frame(self.container, style="Shell.TFrame")
-        header.pack(fill="x", pady=(0, SPACING["lg"]))
+        header.pack(fill="x", pady=(0, SPACING["md"]))
         left = ttk.Frame(header, style="Shell.TFrame")
         left.pack(side="left", fill="x", expand=True)
-        ttk.Label(left, text=APP_NAME, style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(left, text="PRODUCTION STUDIO", style="HeroKicker.TLabel").pack(anchor="w")
+        ttk.Label(left, text=APP_NAME, style="Display.TLabel").pack(anchor="w", pady=(1, 0))
         ttk.Label(
             left,
-            text="Publishing control center for staging videos, validating readiness, and sending posts.",
+            text="Stage, validate, and publish short-form video from one focused workspace.",
             style="Subheading.TLabel",
-        ).pack(anchor="w", pady=(SPACING["xs"], 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         badge = RoundedFrame(
             header,
             bg_color=self.colors["bg"],
-            fill_color=self.colors["soft_panel"],
+            fill_color=self.colors["panel"],
             radius=RADIUS_CARD,
             padding=SPACING["md"],
             outline_color=self.colors["border_soft"],
-            shadow=True,
+            shadow=False,
         )
-        badge.pack(side="right", anchor="ne", padx=(SPACING["xl"], 0))
-        ttk.Label(badge.body, text="CLOUD WORKSPACE", style="PanelMuted.TLabel").pack(anchor="e")
-        ttk.Label(badge.body, textvariable=self.account_var, style="PanelBody.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
-        ttk.Label(badge.body, textvariable=self.status_var, style="PanelMuted.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
+        badge.pack(side="right", anchor="ne", padx=(SPACING["xl"], 0), pady=(SPACING["xs"], 0))
+        ttk.Label(badge.body, text="CLOUD WORKSPACE", style="Muted.TLabel").pack(anchor="e")
+        ttk.Label(badge.body, textvariable=self.account_var, style="Body.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
+        ttk.Label(badge.body, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="e", pady=(SPACING["xs"], 0))
 
         self._build_service_overview(self.container)
         self._build_section_nav(self.container)
@@ -1867,31 +1899,31 @@ class ReelPushDesktop(tk.Tk):
         nav_shell = RoundedFrame(
             parent,
             bg_color=self.colors["bg"],
-            fill_color=self.colors["soft_panel"],
+            fill_color=self.colors["panel"],
             radius=RADIUS_CARD,
             padding=SPACING["xs"],
             outline_color=self.colors["border_soft"],
         )
-        nav_shell.pack(anchor="w", pady=(0, SPACING["lg"]))
+        nav_shell.pack(fill="x", pady=(0, SPACING["md"]))
         nav = nav_shell.body
         self.section_buttons = {}
         for key, label in (("publishing", "Publishing"), ("accounts", "Accounts"), ("settings", "Settings")):
             pill = RoundedFrame(
                 nav,
-                bg_color=self.colors["soft_panel"],
-                fill_color=self.colors["soft_panel"],
+                bg_color=self.colors["panel"],
+                fill_color=self.colors["panel"],
                 radius=RADIUS_CHIP,
                 padding=SPACING["xs"],
                 outline_color=None,
             )
-            pill.pack(side="left", padx=(0 if key == "publishing" else SPACING["md"], 0))
+            pill.pack(side="left", padx=(0 if key == "publishing" else SPACING["sm"], 0))
             tab = tk.Label(
                 pill.body,
                 text=label,
-                bg=self.colors["soft_panel"],
+                bg=self.colors["panel"],
                 fg=self.colors["subtle"],
                 font=self.nav_font,
-                padx=SPACING["lg"],
+                padx=SPACING["xl"],
                 pady=SPACING["sm"],
                 cursor="hand2",
             )
@@ -1910,19 +1942,20 @@ class ReelPushDesktop(tk.Tk):
         self.active_section = section
         for key, widgets in self.section_buttons.items():
             active = key == section
-            fill = self.colors["accent_panel"] if active else self.colors["soft_panel"]
+            fill = self.colors["accent_panel"] if active else self.colors["panel"]
+            widgets["surface"].set_bg(self.colors["panel"])
             widgets["surface"].set_fill(fill)
             widgets["surface"].set_outline(self.colors["accent"] if active else None)
             widgets["label"].configure(
                 bg=fill,
-                fg=self.colors["accent"] if active else self.colors["subtle"],
+                fg=self.colors["text"] if active else self.colors["subtle"],
             )
 
     def _set_tab_hover(self, section: str, hovered: bool) -> None:
         widgets = self.section_buttons.get(section)
         if not widgets or getattr(self, "active_section", "") == section:
             return
-        fill = self.colors["secondary"] if hovered else self.colors["soft_panel"]
+        fill = self.colors["soft_panel"] if hovered else self.colors["panel"]
         widgets["surface"].set_fill(fill)
         widgets["surface"].set_outline(self.colors["focus"] if hovered else None)
         widgets["label"].configure(bg=fill, fg=self.colors["text"] if hovered else self.colors["subtle"])
@@ -1933,17 +1966,17 @@ class ReelPushDesktop(tk.Tk):
             bg_color=self.colors["bg"],
             fill_color=self.colors["panel"],
             radius=RADIUS_PANEL,
-            padding=PADDING_CARD,
+            padding=SPACING["lg"],
             outline_color=self.colors["border_soft"],
-            shadow=True,
+            shadow=False,
         )
-        workflow_surface.pack(fill="x", pady=(0, SPACING["lg"]))
+        workflow_surface.pack(fill="x", pady=(0, SPACING["md"]))
         workflow = workflow_surface.body
         workflow.columnconfigure(0, weight=1)
 
         heading = ttk.Frame(workflow, style="Card.TFrame")
         heading.grid(row=0, column=0, sticky="ew", pady=(0, SPACING["md"]))
-        ttk.Label(heading, text="Publishing Workflow", style="CardTitle.TLabel").pack(side="left")
+        ttk.Label(heading, text="Publish Runway", style="CardTitle.TLabel").pack(side="left")
         self.workflow_summary_var = tk.StringVar(value="Incomplete")
         ttk.Label(heading, textvariable=self.workflow_summary_var, style="FieldHelp.TLabel").pack(side="right")
 
@@ -1961,11 +1994,11 @@ class ReelPushDesktop(tk.Tk):
             step_surface = RoundedFrame(
                 steps_frame,
                 bg_color=self.colors["panel"],
-                fill_color=self.colors["soft_panel"],
+                fill_color=self.colors["field"],
                 radius=RADIUS_CARD,
-                padding=PADDING_CARD,
+                padding=SPACING["md"],
                 outline_color=self.colors["border_soft"],
-                min_height=92,
+                min_height=74,
             )
             step_surface.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else SPACING["sm"], 0))
             steps_frame.columnconfigure(index, weight=1)
@@ -1975,7 +2008,7 @@ class ReelPushDesktop(tk.Tk):
             number_label = tk.Label(
                 step,
                 text=number,
-                bg=self.colors["soft_panel"],
+                bg=self.colors["field"],
                 fg=self.colors["muted"],
                 font=self.meta_font,
                 width=4,
@@ -1985,7 +2018,7 @@ class ReelPushDesktop(tk.Tk):
             title_label = tk.Label(
                 step,
                 text=title,
-                bg=self.colors["soft_panel"],
+                bg=self.colors["field"],
                 fg=self.colors["text"],
                 font=self.small_heading_font,
                 anchor="w",
@@ -1995,7 +2028,7 @@ class ReelPushDesktop(tk.Tk):
             status_label = tk.Label(
                 step,
                 textvariable=status_var,
-                bg=self.colors["soft_panel"],
+                bg=self.colors["field"],
                 fg=self.colors["warn"],
                 font=self.meta_font,
                 anchor="w",
@@ -2005,7 +2038,7 @@ class ReelPushDesktop(tk.Tk):
             detail_label = tk.Label(
                 step,
                 textvariable=detail_var,
-                bg=self.colors["soft_panel"],
+                bg=self.colors["field"],
                 fg=self.colors["muted"],
                 font=self.meta_font,
                 anchor="w",
@@ -2077,7 +2110,7 @@ class ReelPushDesktop(tk.Tk):
         for key, row in self.workflow_rows.items():
             status, detail = status_map[key]
             active = key == active_key
-            fill = self.colors["accent_panel"] if active else self.colors["soft_panel"]
+            fill = self.colors["accent_panel"] if active else self.colors["field"]
             row["surface"].set_fill(fill)
             row["surface"].set_outline(self.colors["accent"] if active else self.colors["border_soft"])
             row["status"].set(status)
@@ -2094,7 +2127,7 @@ class ReelPushDesktop(tk.Tk):
 
     def _build_service_overview(self, parent: ttk.Frame) -> None:
         frame = ttk.Frame(parent, style="Shell.TFrame")
-        frame.pack(fill="x", pady=(0, SPACING["md"]))
+        frame.pack(fill="x", pady=(0, SPACING["sm"]))
 
         grid = ttk.Frame(frame, style="Shell.TFrame")
         grid.pack(fill="x")
@@ -2104,12 +2137,12 @@ class ReelPushDesktop(tk.Tk):
             card_surface = RoundedFrame(
                 grid,
                 bg_color=self.colors["bg"],
-                fill_color=self.colors["soft_panel"],
+                fill_color=self.colors["panel"],
                 radius=RADIUS_CARD,
-                padding=SPACING["md"],
+                padding=SPACING["sm"],
                 outline_color=self.colors["border_soft"],
-                shadow=True,
-                min_height=78,
+                shadow=False,
+                min_height=50,
             )
             card_surface.grid(row=0, column=index, sticky="nsew", padx=(0 if index == 0 else SPACING["sm"], 0))
             grid.columnconfigure(index, weight=1)
@@ -2119,14 +2152,14 @@ class ReelPushDesktop(tk.Tk):
 
             status_var = tk.StringVar(value="Checking")
             detail_var = tk.StringVar(value=label)
-            dot = tk.Canvas(card, width=9, height=9, bg=self.colors["soft_panel"], bd=0, highlightthickness=0)
+            dot = tk.Canvas(card, width=9, height=9, bg=self.colors["panel"], bd=0, highlightthickness=0)
             dot.create_oval(2, 2, 7, 7, fill=self.colors["warn"], outline="")
             dot.grid(row=0, column=0, sticky="w", padx=(0, SPACING["sm"]))
-            ttk.Label(card, text=label, style="PanelBody.TLabel").grid(row=0, column=1, sticky="w")
-            status_label = ttk.Label(card, textvariable=status_var, style="PanelWarn.TLabel")
+            ttk.Label(card, text=label, style="Body.TLabel").grid(row=0, column=1, sticky="w")
+            status_label = ttk.Label(card, textvariable=status_var, style="Warn.TLabel")
             status_label.grid(row=0, column=2, sticky="e", padx=(SPACING["sm"], 0))
-            ttk.Label(card, textvariable=detail_var, style="PanelMuted.TLabel", wraplength=170).grid(
-                row=1, column=0, columnspan=3, sticky="w", pady=(SPACING["sm"], 0)
+            ttk.Label(card, textvariable=detail_var, style="Muted.TLabel", wraplength=270).grid(
+                row=1, column=0, columnspan=3, sticky="w", pady=(2, 0)
             )
             self.service_rows[key] = {
                 "status": status_var,
@@ -2147,7 +2180,7 @@ class ReelPushDesktop(tk.Tk):
             radius=RADIUS_PANEL,
             padding=PADDING_PANEL,
             outline_color=self.colors["border_soft"],
-            shadow=True,
+            shadow=False,
         )
         self.editor_surface.grid(row=0, column=0, sticky="nsew", padx=(0, SPACING["lg"]))
         editor = self.editor_surface.body
@@ -2158,18 +2191,18 @@ class ReelPushDesktop(tk.Tk):
             radius=RADIUS_PANEL,
             padding=PADDING_PANEL,
             outline_color=self.colors["border_soft"],
-            shadow=True,
+            shadow=False,
         )
         self.sidebar_surface.grid(row=0, column=1, sticky="nsew")
         sidebar = self.sidebar_surface.body
         sidebar.columnconfigure(0, weight=1)
 
-        ttk.Label(editor, text="Post Details", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(editor, text="Composer", style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(
             editor,
-            text="Prepare the copy and publishing defaults used for this staged post.",
+            text="Write the reusable copy and publishing defaults for this staged post.",
             style="CardSubtitle.TLabel",
-        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["lg"]))
+        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
 
         title_header = ttk.Frame(editor, style="Card.TFrame")
         title_header.pack(fill="x")
@@ -2181,7 +2214,7 @@ class ReelPushDesktop(tk.Tk):
             placeholder="Enter post title",
             bg_color=self.colors["panel"],
         )
-        self.title_input_surface.pack(fill="x", pady=(SPACING["xs"], SPACING["lg"]))
+        self.title_input_surface.pack(fill="x", pady=(SPACING["xs"], SPACING["md"]))
         self.title_entry.bind("<KeyRelease>", lambda _event: self._handle_post_details_changed())
 
         caption_header = ttk.Frame(editor, style="Card.TFrame")
@@ -2201,7 +2234,7 @@ class ReelPushDesktop(tk.Tk):
         self.caption_surface.pack(fill="both", expand=True, pady=(SPACING["xs"], SPACING["xs"]))
         self.caption_text = tk.Text(
             self.caption_surface.body,
-            height=8,
+            height=6,
             bg=colors["field"],
             fg=colors["text"],
             font=self.body_font,
@@ -2221,7 +2254,7 @@ class ReelPushDesktop(tk.Tk):
             editor,
             text="Common short-form guide: keep captions concise; platform-specific limits are checked before publish.",
             style="FieldHelp.TLabel",
-        ).pack(anchor="w", pady=(0, SPACING["md"]))
+        ).pack(anchor="w", pady=(0, SPACING["sm"]))
 
         hashtags_header = ttk.Frame(editor, style="Card.TFrame")
         hashtags_header.pack(fill="x")
@@ -2237,10 +2270,10 @@ class ReelPushDesktop(tk.Tk):
         self.hashtags_entry.bind("<KeyRelease>", lambda _event: self._handle_post_details_changed())
         self.hashtag_chip_frame = ttk.Frame(editor, style="Card.TFrame")
         self.hashtag_chip_frame.pack(fill="x", pady=(0, SPACING["sm"]))
-        ttk.Label(editor, text="Separate tags with commas. ReelPush normalizes # prefixes when saving.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+        ttk.Label(editor, text="Separate tags with commas. ReelPush normalizes # prefixes when saving.", style="FieldHelp.TLabel").pack(anchor="w", pady=(0, SPACING["sm"]))
 
         self.publishing_grid = ttk.Frame(editor, style="Card.TFrame")
-        self.publishing_grid.pack(fill="x", pady=(SPACING["xs"], SPACING["lg"]))
+        self.publishing_grid.pack(fill="x", pady=(SPACING["xs"], SPACING["md"]))
         self.publishing_grid.columnconfigure(0, weight=1)
         self.publishing_grid.columnconfigure(1, weight=1)
 
@@ -2275,10 +2308,10 @@ class ReelPushDesktop(tk.Tk):
             bg_color=self.colors["panel"],
             fill_color=self.colors["soft_panel"],
             radius=RADIUS_CARD,
-            padding=PADDING_CARD,
+            padding=SPACING["md"],
             outline_color=self.colors["border_soft"],
         )
-        requirements_surface.pack(fill="x", pady=(0, SPACING["lg"]))
+        requirements_surface.pack(fill="x", pady=(0, SPACING["md"]))
         self._build_post_requirements(requirements_surface.body)
 
         preview_surface = RoundedFrame(
@@ -2286,7 +2319,7 @@ class ReelPushDesktop(tk.Tk):
             bg_color=self.colors["panel"],
             fill_color=self.colors["soft_panel"],
             radius=RADIUS_CARD,
-            padding=PADDING_CARD,
+            padding=SPACING["md"],
             outline_color=self.colors["border_soft"],
         )
         preview_surface.pack(fill="x")
@@ -2302,8 +2335,8 @@ class ReelPushDesktop(tk.Tk):
             row=1, column=1, sticky="w", pady=(SPACING["xs"], 0)
         )
 
-        ttk.Label(sidebar, text="Publish Panel", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(sidebar, text="Stage media, choose targets, then send when checks pass.", style="CardSubtitle.TLabel").grid(
+        ttk.Label(sidebar, text="Publish Control", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(sidebar, text="Stage media, choose targets, and send when checks pass.", style="CardSubtitle.TLabel").grid(
             row=1, column=0, sticky="w", pady=(SPACING["xs"], SPACING["md"])
         )
 
@@ -2312,19 +2345,19 @@ class ReelPushDesktop(tk.Tk):
             bg_color=self.colors["panel"],
             fill_color=self.colors["soft_panel"],
             radius=RADIUS_CARD,
-            padding=PADDING_CARD,
+            padding=SPACING["md"],
             outline_color=self.colors["border_soft"],
         )
-        video_surface.grid(row=2, column=0, sticky="ew", pady=(0, SPACING["lg"]))
+        video_surface.grid(row=2, column=0, sticky="ew", pady=(0, SPACING["md"]))
         video_box = video_surface.body
         video_box.columnconfigure(0, weight=1)
         self.file_var = tk.StringVar(value="No video staged yet")
         self.video_meta_var = tk.StringVar(value="Choose a local video when you are ready to validate and publish.")
         self.video_warning_var = tk.StringVar(value="")
-        placeholder = tk.Canvas(video_box, height=86, bg=self.colors["soft_panel"], highlightthickness=0, bd=0)
-        placeholder.grid(row=0, column=0, sticky="ew", pady=(0, SPACING["md"]))
-        placeholder.create_rectangle(10, 10, 62, 76, fill=self.colors["accent_panel"], outline="")
-        placeholder.create_polygon(31, 31, 31, 55, 50, 43, fill=self.colors["muted"], outline="")
+        placeholder = tk.Canvas(video_box, height=72, bg=self.colors["soft_panel"], highlightthickness=0, bd=0)
+        placeholder.grid(row=0, column=0, sticky="ew", pady=(0, SPACING["sm"]))
+        placeholder.create_rectangle(8, 8, 62, 64, fill=self.colors["accent_panel"], outline=self.colors["border_soft"])
+        placeholder.create_polygon(29, 27, 29, 47, 47, 37, fill=self.colors["accent"], outline="")
         self.video_placeholder = placeholder
         ttk.Label(video_box, text="Video", style="PanelMuted.TLabel").grid(row=1, column=0, sticky="w")
         ttk.Label(video_box, textvariable=self.file_var, style="PanelBody.TLabel", wraplength=280).grid(
@@ -2343,7 +2376,7 @@ class ReelPushDesktop(tk.Tk):
         self.clear_button.pack(side="left", padx=(SPACING["sm"], 0))
         self.clear_button.configure(state="disabled")
 
-        ttk.Label(sidebar, text="Choose Platforms", style="Body.TLabel").grid(row=3, column=0, sticky="w", pady=(0, SPACING["sm"]))
+        ttk.Label(sidebar, text="Targets", style="Body.TLabel").grid(row=3, column=0, sticky="w", pady=(0, SPACING["sm"]))
         platforms_frame = ttk.Frame(sidebar, style="Card.TFrame")
         platforms_frame.grid(row=4, column=0, sticky="ew")
         self._build_platform_rows(platforms_frame)
@@ -2353,10 +2386,10 @@ class ReelPushDesktop(tk.Tk):
             bg_color=self.colors["panel"],
             fill_color=self.colors["soft_panel"],
             radius=RADIUS_CARD,
-            padding=PADDING_CARD,
+            padding=SPACING["md"],
             outline_color=self.colors["border_soft"],
         )
-        readiness_surface.grid(row=5, column=0, sticky="ew", pady=(SPACING["lg"], 0))
+        readiness_surface.grid(row=5, column=0, sticky="ew", pady=(SPACING["md"], 0))
         readiness = readiness_surface.body
         ttk.Label(readiness, text="Readiness Summary", style="PanelBody.TLabel").pack(anchor="w")
         self.delivery_summary_var = tk.StringVar(value="Complete the checklist to publish.")
@@ -2371,7 +2404,7 @@ class ReelPushDesktop(tk.Tk):
         self._build_readiness_checklist(readiness)
 
         stage_actions = ttk.Frame(sidebar, style="Card.TFrame")
-        stage_actions.grid(row=6, column=0, sticky="ew", pady=(SPACING["lg"], 0))
+        stage_actions.grid(row=6, column=0, sticky="ew", pady=(SPACING["md"], 0))
         stage_actions.columnconfigure((0, 1), weight=1)
         ttk.Button(stage_actions, text="Save Draft", style="Secondary.TButton", command=self.save_profile).grid(
             row=0, column=0, sticky="ew", padx=(0, SPACING["sm"])
@@ -2385,7 +2418,7 @@ class ReelPushDesktop(tk.Tk):
 
         self.publish_log = tk.Text(
             sidebar,
-            height=7,
+            height=5,
             bg=colors["log"],
             fg=colors["text"],
             font=self.body_font,
@@ -2395,7 +2428,7 @@ class ReelPushDesktop(tk.Tk):
             highlightthickness=0,
             wrap="word",
         )
-        self.publish_log.grid(row=8, column=0, sticky="nsew", pady=(SPACING["lg"], 0))
+        self.publish_log.grid(row=8, column=0, sticky="nsew", pady=(SPACING["md"], 0))
         sidebar.rowconfigure(8, weight=1)
         self.publish_log.insert("end", "Publish results will appear here.\n")
         self.publish_log.configure(state="disabled")
@@ -2484,21 +2517,21 @@ class ReelPushDesktop(tk.Tk):
             row_surface = RoundedFrame(
                 parent,
                 bg_color=self.colors["panel"],
-                fill_color=self.colors["soft_panel"],
+                fill_color=self.colors["field"],
                 radius=RADIUS_CARD,
-                padding=PADDING_CARD,
+                padding=SPACING["md"],
                 outline_color=self.colors["border_soft"],
             )
             row_surface.grid(row=row_index, column=0, sticky="ew", pady=(0 if row_index == 0 else SPACING["sm"], 0))
             row = row_surface.body
             row.columnconfigure(1, weight=1)
-            row.columnconfigure(2, minsize=92)
+            row.columnconfigure(2, minsize=72)
             parent.columnconfigure(0, weight=1)
 
             badge = tk.Label(
                 row,
                 text=details.get("badge", details["name"][:2]).upper(),
-                bg=self.colors["secondary"],
+                bg=self.colors["accent_panel"],
                 fg=self.colors["text"],
                 font=self.meta_font,
                 width=4,
@@ -2506,18 +2539,48 @@ class ReelPushDesktop(tk.Tk):
                 pady=SPACING["sm"],
             )
             badge.grid(row=0, column=0, rowspan=3, sticky="n", padx=(0, SPACING["md"]))
-            name_label = ttk.Label(row, text=details["name"], style="PanelBody.TLabel")
+            name_label = tk.Label(
+                row,
+                text=details["name"],
+                bg=self.colors["field"],
+                fg=self.colors["text"],
+                font=self.body_font,
+                anchor="w",
+            )
             name_label.grid(row=0, column=1, sticky="w")
             status_var = tk.StringVar(value="Checking account")
             readiness_var = tk.StringVar(value="Waiting for status")
-            selected_var = tk.StringVar(value="Select")
-            status_label = ttk.Label(row, textvariable=status_var, style="PanelSmallWarn.TLabel")
+            selected_var = tk.StringVar(value="Add")
+            status_label = tk.Label(
+                row,
+                textvariable=status_var,
+                bg=self.colors["field"],
+                fg=self.colors["warn"],
+                font=self.meta_font,
+                anchor="w",
+            )
             status_label.grid(row=1, column=1, sticky="w", pady=(SPACING["xs"], 0))
-            readiness_label = ttk.Label(row, textvariable=readiness_var, style="PanelMuted.TLabel", wraplength=250)
+            readiness_label = tk.Label(
+                row,
+                textvariable=readiness_var,
+                bg=self.colors["field"],
+                fg=self.colors["muted"],
+                font=self.muted_font,
+                anchor="w",
+                justify="left",
+                wraplength=250,
+            )
             readiness_label.grid(row=2, column=1, columnspan=2, sticky="w", pady=(SPACING["xs"], 0))
-            selected_label = ttk.Label(row, textvariable=selected_var, style="PanelMuted.TLabel")
+            selected_label = tk.Label(
+                row,
+                textvariable=selected_var,
+                bg=self.colors["field"],
+                fg=self.colors["muted"],
+                font=self.meta_font,
+                anchor="e",
+            )
             selected_label.grid(row=0, column=2, sticky="e", padx=(SPACING["sm"], 0))
-            status_dot = tk.Canvas(row, width=10, height=10, bg=self.colors["soft_panel"], bd=0, highlightthickness=0)
+            status_dot = tk.Canvas(row, width=10, height=10, bg=self.colors["field"], bd=0, highlightthickness=0)
             status_dot.create_oval(2, 2, 8, 8, fill=self.colors["warn"], outline="")
             status_dot.grid(row=1, column=2, sticky="e", padx=(SPACING["sm"], 0), pady=(SPACING["xs"], 0))
 
@@ -2595,30 +2658,23 @@ class ReelPushDesktop(tk.Tk):
         for platform, row in getattr(self, "platform_rows", {}).items():
             selected = self.selected_platform_vars[platform].get() if platform in self.selected_platform_vars else False
             hovered = bool(row.get("hovered"))
-            fill = self.colors["accent_panel"] if selected else (self.colors["field_hover"] if hovered else self.colors["soft_panel"])
+            fill = self.colors["accent_panel"] if selected else (self.colors["field_hover"] if hovered else self.colors["field"])
             outline = self.colors["accent"] if selected else (self.colors["focus"] if hovered else self.colors["border_soft"])
             row["surface"].set_fill(fill)
             row["surface"].set_outline(outline)
             row["badge"].configure(
-                bg=self.colors["accent"] if selected else self.colors["secondary"],
+                bg=self.colors["accent"] if selected else self.colors["accent_panel"],
                 fg="#ffffff" if selected else self.colors["text"],
             )
             row["dot"].configure(bg=fill)
             dot_color = self.colors["good"] if row.get("tone") == "good" else self.colors["warn"] if row.get("tone") == "warn" else self.colors["bad"]
             row["dot"].delete("all")
             row["dot"].create_oval(2, 2, 8, 8, fill=dot_color, outline="")
-            row["selected"].set("Selected" if selected else "Select")
-            body_style = "SelectedPanelBody.TLabel" if selected else "PanelBody.TLabel"
-            muted_style = "SelectedPanelMuted.TLabel" if selected else "PanelMuted.TLabel"
-            row["name_label"].configure(style=body_style)
-            row["readiness_label"].configure(style=muted_style)
-            row["selected_label"].configure(style=body_style if selected else muted_style)
-            status_style = str(row["status_label"].cget("style"))
-            if selected:
-                if not status_style.startswith("Selected"):
-                    row["status_label"].configure(style=status_style.replace("PanelSmall", "SelectedPanelSmall"))
-            else:
-                row["status_label"].configure(style=status_style.replace("SelectedPanelSmall", "PanelSmall"))
+            row["selected"].set("Selected" if selected else "Add")
+            row["name_label"].configure(bg=fill, fg=self.colors["text"])
+            row["readiness_label"].configure(bg=fill, fg=self.colors["text"] if selected else self.colors["muted"])
+            row["selected_label"].configure(bg=fill, fg=self.colors["text"] if selected else self.colors["muted"])
+            row["status_label"].configure(bg=fill, fg=dot_color)
 
     def _handle_post_details_changed(self) -> None:
         self._update_character_counts()
@@ -2728,10 +2784,10 @@ class ReelPushDesktop(tk.Tk):
                 self.clear_button.configure(state="normal")
             if hasattr(self, "video_placeholder"):
                 self.video_placeholder.delete("all")
-                self.video_placeholder.create_rectangle(10, 10, 86, 76, fill=self.colors["accent_panel"], outline="")
-                self.video_placeholder.create_rectangle(100, 18, 260, 28, fill=self.colors["secondary"], outline="")
-                self.video_placeholder.create_rectangle(100, 40, 210, 50, fill=self.colors["secondary"], outline="")
-                self.video_placeholder.create_polygon(40, 31, 40, 55, 60, 43, fill=self.colors["muted"], outline="")
+                self.video_placeholder.create_rectangle(8, 8, 78, 64, fill=self.colors["accent_panel"], outline=self.colors["border_soft"])
+                self.video_placeholder.create_rectangle(92, 18, 260, 27, fill=self.colors["secondary"], outline="")
+                self.video_placeholder.create_rectangle(92, 40, 214, 49, fill=self.colors["secondary"], outline="")
+                self.video_placeholder.create_polygon(37, 26, 37, 46, 56, 36, fill=self.colors["accent"], outline="")
             if hasattr(self, "preview_meta_var"):
                 self.preview_meta_var.set(meta)
         else:
@@ -2743,25 +2799,33 @@ class ReelPushDesktop(tk.Tk):
                 self.clear_button.configure(state="disabled")
             if hasattr(self, "video_placeholder"):
                 self.video_placeholder.delete("all")
-                self.video_placeholder.create_rectangle(10, 10, 72, 76, fill=self.colors["accent_panel"], outline="")
-                self.video_placeholder.create_oval(30, 29, 52, 51, fill=self.colors["secondary"], outline="")
-                self.video_placeholder.create_polygon(38, 34, 38, 47, 49, 40, fill=self.colors["muted"], outline="")
-                self.video_placeholder.create_rectangle(92, 24, 240, 32, fill=self.colors["secondary"], outline="")
-                self.video_placeholder.create_rectangle(92, 48, 190, 56, fill=self.colors["secondary"], outline="")
+                self.video_placeholder.create_rectangle(8, 8, 72, 64, fill=self.colors["accent_panel"], outline=self.colors["border_soft"])
+                self.video_placeholder.create_oval(30, 25, 52, 47, fill=self.colors["secondary"], outline="")
+                self.video_placeholder.create_polygon(38, 30, 38, 43, 49, 36, fill=self.colors["accent"], outline="")
+                self.video_placeholder.create_rectangle(90, 22, 240, 31, fill=self.colors["secondary"], outline="")
+                self.video_placeholder.create_rectangle(90, 45, 194, 54, fill=self.colors["secondary"], outline="")
             if hasattr(self, "preview_meta_var"):
                 self.preview_meta_var.set("No staged video metadata available yet.")
 
     def _build_accounts_tab(self) -> None:
-        self.accounts_frame = ttk.Frame(self.accounts_tab, style="Card.TFrame", padding=PADDING_PANEL)
-        self.accounts_frame.pack(fill="both", expand=True)
+        accounts_surface = RoundedFrame(
+            self.accounts_tab,
+            bg_color=self.colors["bg"],
+            fill_color=self.colors["panel"],
+            radius=RADIUS_PANEL,
+            padding=PADDING_PANEL,
+            outline_color=self.colors["border_soft"],
+        )
+        accounts_surface.pack(fill="both", expand=True)
+        self.accounts_frame = accounts_surface.body
 
-        ttk.Label(self.accounts_frame, text="Connected Accounts", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(self.accounts_frame, text="Account Switchboard", style="CardTitle.TLabel").pack(anchor="w")
 
         ttk.Label(
             self.accounts_frame,
-            text="Use Connect to approve a platform in your browser. ReelPush Desktop will detect the connection when you return.",
+            text="Approve each platform in the browser, then return here to verify publishing access.",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=(0, SPACING["md"]))
+        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
 
         self.account_rows: dict[str, dict[str, Any]] = {}
         for platform in PLATFORM_ORDER:
@@ -2770,15 +2834,26 @@ class ReelPushDesktop(tk.Tk):
                 bg_color=self.colors["panel"],
                 fill_color=self.colors["soft_panel"],
                 radius=RADIUS_CARD,
-                padding=PADDING_CARD,
+                padding=SPACING["md"],
                 outline_color=self.colors["border_soft"],
-                shadow=True,
+                shadow=False,
             )
             row_surface.pack(fill="x", pady=(0, SPACING["md"]))
             row = row_surface.body
 
             top = ttk.Frame(row, style="SoftPanel.TFrame")
             top.pack(fill="x")
+
+            badge = tk.Label(
+                top,
+                text=PLATFORM_DETAILS[platform].get("badge", platform[:2]).upper(),
+                bg=self.colors["accent_panel"],
+                fg=self.colors["text"],
+                font=self.meta_font,
+                padx=SPACING["sm"],
+                pady=SPACING["xs"],
+            )
+            badge.pack(side="left", padx=(0, SPACING["md"]))
 
             name = ttk.Label(top, text=PLATFORM_DETAILS[platform]["name"], style="PanelBody.TLabel")
             name.pack(side="left")
@@ -2872,10 +2947,18 @@ class ReelPushDesktop(tk.Tk):
 
     def _build_settings_tab(self) -> None:
         # ── Backend Connection ─────────────────────────────────────────────
-        conn = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
-        conn.pack(fill="x", pady=(0, SPACING["lg"]))
+        conn_surface = RoundedFrame(
+            self.settings_tab,
+            bg_color=self.colors["bg"],
+            fill_color=self.colors["panel"],
+            radius=RADIUS_PANEL,
+            padding=PADDING_PANEL,
+            outline_color=self.colors["border_soft"],
+        )
+        conn_surface.pack(fill="x", pady=(0, SPACING["md"]))
+        conn = conn_surface.body
 
-        ttk.Label(conn, text="Backend Connection", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+        ttk.Label(conn, text="Server Connection", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
 
         # Server mode toggle
         current_url = self.desktop_settings.get("server_url", OFFICIAL_SERVER_URL)
@@ -2963,10 +3046,18 @@ class ReelPushDesktop(tk.Tk):
         )
 
         # ── Appearance ─────────────────────────────────────────────────────
-        panel = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
-        panel.pack(fill="x")
+        panel_surface = RoundedFrame(
+            self.settings_tab,
+            bg_color=self.colors["bg"],
+            fill_color=self.colors["panel"],
+            radius=RADIUS_PANEL,
+            padding=PADDING_PANEL,
+            outline_color=self.colors["border_soft"],
+        )
+        panel_surface.pack(fill="x")
+        panel = panel_surface.body
 
-        ttk.Label(panel, text="Appearance", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
+        ttk.Label(panel, text="Studio Appearance", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
         ttk.Label(panel, text="ACCENT PRESET", style="Micro.TLabel").pack(anchor="w")
         theme_names = [theme["name"] for theme in THEMES.values()]
         self.theme_var = tk.StringVar(value=THEMES[self.theme_key]["name"])
@@ -2990,8 +3081,16 @@ class ReelPushDesktop(tk.Tk):
         self.settings_status_var = tk.StringVar(value="Accent preference is saved for this desktop app.")
         ttk.Label(panel, textvariable=self.settings_status_var, style="Muted.TLabel").pack(anchor="w", pady=(SPACING["md"], 0))
 
-        credentials = ttk.Frame(self.settings_tab, style="Card.TFrame", padding=PADDING_PANEL)
-        credentials.pack(fill="x", pady=(SPACING["lg"], 0))
+        credentials_surface = RoundedFrame(
+            self.settings_tab,
+            bg_color=self.colors["bg"],
+            fill_color=self.colors["panel"],
+            radius=RADIUS_PANEL,
+            padding=PADDING_PANEL,
+            outline_color=self.colors["border_soft"],
+        )
+        credentials_surface.pack(fill="x", pady=(SPACING["md"], 0))
+        credentials = credentials_surface.body
         ttk.Label(credentials, text="Platform Credentials", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
         ttk.Label(
             credentials,
@@ -3412,7 +3511,7 @@ class ReelPushDesktop(tk.Tk):
                 detail = f"{detail[:55]}..."
             row["status"].set(label)
             row["detail"].set(detail)
-            row["label"].configure(style="PanelGood.TLabel" if ok else "PanelBad.TLabel")
+            row["label"].configure(style="Good.TLabel" if ok else "Bad.TLabel")
             if "dot" in row:
                 fill = self.colors["good"] if ok else self.colors["bad"]
                 row["dot"].delete("all")
@@ -3446,7 +3545,6 @@ class ReelPushDesktop(tk.Tk):
                 platform_row["status"].set(diagnostics["status_badge"])
                 platform_row["readiness"].set(diagnostics["detail"])
                 platform_row["tone"] = diagnostics["tone"]
-                platform_row["status_label"].configure(style=self._tone_style(diagnostics["tone"], panel=True).replace("Panel", "PanelSmall"))
         self._refresh_platform_selection_styles()
 
     def _apply_delivery_readiness(self, statuses: list[dict[str, Any]], staged: dict[str, Any]) -> None:
