@@ -62,7 +62,7 @@ def _user_data_root() -> Path:
 USER_DATA_ROOT = _user_data_root()
 RESOURCE_ROOT = _application_resource_root()
 ROOT_DIR = USER_DATA_ROOT / "runtime" if getattr(sys, "frozen", False) else RESOURCE_ROOT
-OFFICIAL_SERVER_URL = "http://129.213.126.251"
+OFFICIAL_SERVER_URL = "http://129.213.126.251:8100"
 API_BASE = os.environ.get("REELPUSH_API_BASE", f"{OFFICIAL_SERVER_URL}/api").rstrip("/")
 API_ROOT = API_BASE[:-4] if API_BASE.endswith("/api") else API_BASE
 SETTINGS_PATH = USER_DATA_ROOT / "desktop_settings.json"

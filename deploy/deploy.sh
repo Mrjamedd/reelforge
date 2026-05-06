@@ -91,4 +91,4 @@ REMOTE
 
 echo ""
 echo "=== Deploy complete ==="
-echo "Health check: curl http://$(echo $OCI_HOST | cut -d@ -f2)/api/health"
+echo "Health check: curl http://$(echo $OCI_HOST | cut -d@ -f2):8100/api/health"
