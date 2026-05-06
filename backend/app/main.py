@@ -49,14 +49,15 @@ async def lifespan(app: FastAPI):
     logger.info("reelpush_shutdown")
 
 
+_prod = settings.environment == "production"
 app = FastAPI(
     title="ReelPush API",
     description="Multi-platform short-form video publishing backend.",
     version="1.1.0",
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url=None if _prod else "/api/docs",
+    redoc_url=None if _prod else "/api/redoc",
+    openapi_url=None if _prod else "/api/openapi.json",
 )
 
 # ─── Routes ───────────────────────────────────────────────────────────────────

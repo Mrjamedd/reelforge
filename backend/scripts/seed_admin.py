@@ -33,6 +33,10 @@ async def seed():
             print(f"Admin user {settings.admin_email!r} already exists. Skipping.")
             return
 
+        if not settings.admin_password:
+            print("ADMIN_PASSWORD env var not set — skipping seed.")
+            return
+
         user = AdminUser(
             email=settings.admin_email,
             hashed_password=hash_password(settings.admin_password),

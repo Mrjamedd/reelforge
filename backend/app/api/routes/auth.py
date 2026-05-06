@@ -1,8 +1,10 @@
 import random
 import string
+import time
+from collections import defaultdict
 from datetime import timedelta, timezone, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,22 @@ from app.services.email_service import send_verification_email
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _VERIFY_TTL_MINUTES = 35
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_WINDOW = 60
+_RATE_MAX = 5
+
+
+def _check_rate_limit(ip: str) -> None:
+    now = time.time()
+    cutoff = now - _RATE_WINDOW
+    attempts = [t for t in _login_attempts[ip] if t > cutoff]
+    _login_attempts[ip] = attempts
+    if len(attempts) >= _RATE_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait a minute.",
+        )
+    _login_attempts[ip].append(now)
 
 
 def _generate_code() -> str:
@@ -92,7 +110,8 @@ async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    _check_rate_limit(request.client.host if request.client else "unknown")
     result = await db.execute(
         select(AdminUser).where(AdminUser.email == body.email)
     )

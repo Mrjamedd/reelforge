@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Admin seed
     admin_email: str = "mr6jam3@gmail.com"
-    admin_password: str = "HoppersGo29"
+    admin_password: str | None = None
 
     # App URLs
     api_url: str = "http://localhost:8000"
