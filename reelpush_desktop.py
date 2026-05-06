@@ -62,7 +62,8 @@ def _user_data_root() -> Path:
 USER_DATA_ROOT = _user_data_root()
 RESOURCE_ROOT = _application_resource_root()
 ROOT_DIR = USER_DATA_ROOT / "runtime" if getattr(sys, "frozen", False) else RESOURCE_ROOT
-API_BASE = os.environ.get("REELPUSH_API_BASE", "http://localhost:8100/api").rstrip("/")
+OFFICIAL_SERVER_URL = "http://129.213.126.251:8100"
+API_BASE = os.environ.get("REELPUSH_API_BASE", f"{OFFICIAL_SERVER_URL}/api").rstrip("/")
 API_ROOT = API_BASE[:-4] if API_BASE.endswith("/api") else API_BASE
 SETTINGS_PATH = USER_DATA_ROOT / "desktop_settings.json"
 ENV_PATH = ROOT_DIR / ".env"
@@ -1516,18 +1517,18 @@ class ReelPushDesktop(tk.Tk):
         ttk.Label(panel, text="Welcome to ReelPush", style="Heading.TLabel").pack(anchor="w")
         ttk.Label(
             panel,
-            text="Enter your team's ReelPush server URL to get started.",
+            text="Sign in to the official ReelPush server, or connect to your own.",
             style="Subheading.TLabel",
         ).pack(anchor="w", pady=(SPACING["sm"], SPACING["xl"]))
 
         ttk.Label(panel, text="SERVER URL", style="Micro.TLabel").pack(anchor="w")
         url_surface, url_entry = self._make_entry_field(panel, bg_color=self.colors["panel"])
+        url_entry.insert(0, OFFICIAL_SERVER_URL)
         url_surface.pack(fill="x", pady=(4, 0))
-        ttk.Label(
-            panel,
-            text="e.g. https://reelpush.yourdomain.com or http://1.2.3.4:8100",
-            style="FieldHelp.TLabel",
-        ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
+
+        url_hint_row = ttk.Frame(panel, style="Panel.TFrame")
+        url_hint_row.pack(fill="x", pady=(SPACING["xs"], SPACING["md"]))
+        ttk.Label(url_hint_row, text="Official server is pre-filled. Change only if using a personal server.", style="FieldHelp.TLabel").pack(side="left")
 
         creds_row = ttk.Frame(panel, style="Panel.TFrame")
         creds_row.pack(fill="x")
@@ -2893,13 +2894,45 @@ class ReelPushDesktop(tk.Tk):
 
         ttk.Label(conn, text="Backend Connection", style="CardTitle.TLabel").pack(anchor="w", pady=(0, SPACING["md"]))
 
+        # Server mode toggle
+        current_url = self.desktop_settings.get("server_url", OFFICIAL_SERVER_URL)
+        is_personal = current_url != OFFICIAL_SERVER_URL
+        self._using_personal_server = tk.BooleanVar(value=is_personal)
+
+        mode_row = ttk.Frame(conn, style="Panel.TFrame")
+        mode_row.pack(fill="x", pady=(0, SPACING["md"]))
+
+        def _on_mode_toggle() -> None:
+            using_personal = self._using_personal_server.get()
+            if using_personal:
+                self.server_url_entry.configure(state="normal")
+                if self.server_url_entry.get().strip() == OFFICIAL_SERVER_URL:
+                    self.server_url_entry.delete(0, "end")
+            else:
+                self.server_url_entry.delete(0, "end")
+                self.server_url_entry.insert(0, OFFICIAL_SERVER_URL)
+                self.server_url_entry.configure(state="disabled")
+
+        official_btn = ttk.Radiobutton(
+            mode_row, text="Official ReelPush Server", variable=self._using_personal_server,
+            value=False, command=_on_mode_toggle,
+        )
+        official_btn.pack(side="left", padx=(0, SPACING["xl"]))
+        personal_btn = ttk.Radiobutton(
+            mode_row, text="Personal / Self-Hosted Server", variable=self._using_personal_server,
+            value=True, command=_on_mode_toggle,
+        )
+        personal_btn.pack(side="left")
+
         ttk.Label(conn, text="SERVER URL", style="Micro.TLabel").pack(anchor="w")
         server_url_surface, self.server_url_entry = self._make_entry_field(conn, bg_color=self.colors["panel"])
-        self.server_url_entry.insert(0, self.desktop_settings.get("server_url", API_ROOT))
+        self.server_url_entry.insert(0, current_url)
+        if not is_personal:
+            self.server_url_entry.configure(state="disabled")
         server_url_surface.pack(fill="x", pady=(4, 0))
         ttk.Label(
             conn,
-            text="Enter the shared server URL your team uses, e.g. https://reelpush.yourdomain.com",
+            text="Personal server URL, e.g. https://reelpush.yourdomain.com or http://1.2.3.4:8100",
             style="FieldHelp.TLabel",
         ).pack(anchor="w", pady=(SPACING["xs"], SPACING["md"]))
 
@@ -2940,7 +2973,7 @@ class ReelPushDesktop(tk.Tk):
         ).pack(side="left", padx=(SPACING["md"], 0))
 
         self.server_conn_status_var = tk.StringVar(
-            value="Enter your server URL and credentials, then click Save & Connect."
+            value="Using official ReelPush server." if not is_personal else "Enter your server URL and credentials, then click Save & Connect."
         )
         ttk.Label(conn, textvariable=self.server_conn_status_var, style="Muted.TLabel", wraplength=620).pack(
             anchor="w", pady=(SPACING["md"], 0)
@@ -3214,7 +3247,11 @@ class ReelPushDesktop(tk.Tk):
             status_label.configure(style=style)
 
     def save_server_settings(self) -> None:
-        url = self.server_url_entry.get().strip().rstrip("/")
+        using_personal = getattr(self, "_using_personal_server", None)
+        if using_personal and not using_personal.get():
+            url = OFFICIAL_SERVER_URL
+        else:
+            url = self.server_url_entry.get().strip().rstrip("/")
         email = self.server_email_entry.get().strip()
         password = self.server_password_entry.get().strip()
         if not url:
