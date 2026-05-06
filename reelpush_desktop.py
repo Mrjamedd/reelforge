@@ -1584,9 +1584,23 @@ class ReelPushDesktop(tk.Tk):
 
             threading.Thread(target=runner, daemon=True).start()
 
-        btn = ttk.Button(panel, text="Connect", style="Accent.TButton", command=do_connect)
-        btn.pack(anchor="w")
+        first_run_actions = ttk.Frame(panel, style="Panel.TFrame")
+        first_run_actions.pack(anchor="w")
+        btn = ttk.Button(first_run_actions, text="Connect", style="Accent.TButton", command=do_connect)
+        btn.pack(side="left")
         connect_button.append(btn)
+
+        def do_first_run_register() -> None:
+            url = url_entry.get().strip().rstrip("/")
+            if not url:
+                status_var.set("Enter a server URL before creating an account.")
+                return
+            _set_active_api_url(url)
+            self.desktop_settings["server_url"] = url
+            _save_desktop_settings(self.desktop_settings)
+            self.show_register()
+
+        ttk.Button(first_run_actions, text="Create Account", style="Secondary.TButton", command=do_first_run_register).pack(side="left", padx=(SPACING["md"], 0))
 
         status_label = ttk.Label(panel, textvariable=status_var, style="Muted.TLabel", wraplength=420)
         status_label.pack(anchor="w", pady=(SPACING["md"], 0))
@@ -2920,6 +2934,9 @@ class ReelPushDesktop(tk.Tk):
         self.server_save_button.pack(side="left")
         ttk.Button(
             conn_actions, text="Test Connection", style="Secondary.TButton", command=self.test_server_connection
+        ).pack(side="left", padx=(SPACING["md"], 0))
+        ttk.Button(
+            conn_actions, text="Create Account", style="Secondary.TButton", command=self.show_register
         ).pack(side="left", padx=(SPACING["md"], 0))
 
         self.server_conn_status_var = tk.StringVar(
