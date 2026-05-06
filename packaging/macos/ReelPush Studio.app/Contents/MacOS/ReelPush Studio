@@ -1,0 +1,22 @@
+#!/bin/bash
+# ReelPush Studio launcher — runs from source and auto-pulls updates on startup.
+
+REPO_DIR="/Users/anthonymurphy/Personal_Python/ReelPush Mac+Windows/ReelPush-Mac"
+PYTHON="/Library/Frameworks/Python.framework/Versions/3.14/bin/python3"
+BRANCH="server-backend-migration"
+LOG="$REPO_DIR/launcher.log"
+
+# Redirect all output to a log file so errors are visible without a terminal
+exec >> "$LOG" 2>&1
+echo "--- $(date) ---"
+
+# Auto-pull latest code in the background so launch isn't delayed
+(
+    cd "$REPO_DIR" || exit
+    git fetch origin "$BRANCH" --quiet
+    git merge --ff-only "origin/$BRANCH" --quiet
+    echo "git pull complete"
+) &
+
+# Launch the app immediately using the current source
+exec "$PYTHON" "$REPO_DIR/reelpush_desktop.py"
