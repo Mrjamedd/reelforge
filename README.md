@@ -71,6 +71,7 @@ cp .env.example .env
 ### Prerequisites
 - Docker + Docker Compose
 - Python 3.11+
+- `ffmpeg` and `libmagic` if you run the backend directly outside Docker
 
 ### Start everything
 

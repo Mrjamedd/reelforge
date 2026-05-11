@@ -13,6 +13,8 @@ MockStorageProvider is for tests only - never returned by get_storage_provider()
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from ipaddress import ip_address
+from urllib.parse import urlparse
 
 
 _PLACEHOLDER_VALUES: frozenset[str] = frozenset(
@@ -22,6 +24,29 @@ _PLACEHOLDER_VALUES: frozenset[str] = frozenset(
 
 def _is_placeholder(value: str) -> bool:
     return not value or value.lower().strip() in _PLACEHOLDER_VALUES
+
+
+def _is_public_https_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.strip().lower()
+    if hostname == "localhost" or hostname.endswith(".local"):
+        return False
+
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return True
+
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_unspecified
+    )
 
 
 class StorageProvider(ABC):
@@ -50,22 +75,24 @@ class StorageProvider(ABC):
 
 
 class LocalStorageProvider(StorageProvider):
-    """Serves files from the local backend API. NOT publicly accessible - blocks Instagram."""
+    """Serves files from the backend API when API_URL is a public HTTPS origin."""
 
     def __init__(self, api_url: str) -> None:
         self._api_url = api_url
 
     @property
     def is_publicly_accessible(self) -> bool:
-        return False
+        return _is_public_https_url(self._api_url)
 
     @property
     def configuration_errors(self) -> list[str]:
+        if self.is_publicly_accessible:
+            return []
         return [
-            "Local storage is not publicly accessible. "
-            "Instagram requires a public HTTPS URL for video uploads. "
-            "Set STORAGE_BACKEND=s3 and configure S3_BUCKET, AWS_ACCESS_KEY_ID, "
-            "AWS_SECRET_ACCESS_KEY in .env (or use Cloudflare R2 via S3_ENDPOINT_URL)."
+            "Local storage is only valid for Instagram when API_URL is a public HTTPS URL. "
+            "Set API_URL to a public HTTPS server or set STORAGE_BACKEND=s3 and configure "
+            "S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY in .env "
+            "(or use Cloudflare R2 via S3_ENDPOINT_URL)."
         ]
 
     async def get_public_url(self, key: str, expires_in: int = 3600) -> str:

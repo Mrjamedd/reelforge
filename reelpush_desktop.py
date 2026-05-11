@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import queue
@@ -635,6 +636,10 @@ class DropdownField(RoundedFrame):
         self.set_outline(self.colors["focus"] if hovered else self.colors["border"])
 
 
+class AuthExpiredError(RuntimeError):
+    """Raised when the local ReelPush API session token has expired."""
+
+
 class ApiClient:
     def __init__(self) -> None:
         self.token: str | None = None
@@ -669,11 +674,32 @@ class ApiClient:
                 return json.loads(raw.decode("utf-8"))
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            stripped = body.lstrip()
+            if stripped.lower().startswith("<!") or stripped.lower().startswith("<html"):
+                # Cloudflare or proxy HTML error — never surface raw HTML to the user.
+                _cf_messages = {
+                    524: "Server timed out or disconnected (524). Please retry or reconnect.",
+                    520: "Server returned an unexpected response (520). Please retry or reconnect.",
+                    521: "Server is unreachable (521). Please retry or reconnect.",
+                    522: "Connection timed out (522). Please retry or reconnect.",
+                    523: "Server is unreachable (523). Please retry or reconnect.",
+                    525: "SSL handshake failed (525). Please retry or reconnect.",
+                    526: "Invalid SSL certificate (526). Please retry or reconnect.",
+                }
+                message = _cf_messages.get(
+                    exc.code,
+                    f"Server returned an error (HTTP {exc.code}). Please retry or reconnect.",
+                )
+                logging.getLogger(__name__).warning("HTTP %s proxy/gateway error (HTML body suppressed)", exc.code)
+                raise RuntimeError(message) from exc
             try:
                 detail = json.loads(body)
             except json.JSONDecodeError:
                 detail = body
-            raise RuntimeError(detail.get("detail") if isinstance(detail, dict) else detail) from exc
+            message = detail.get("detail") if isinstance(detail, dict) else detail
+            if exc.code == 401 and str(message).strip() == "Invalid or expired credentials.":
+                raise AuthExpiredError(str(message)) from exc
+            raise RuntimeError(message) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Could not reach ReelPush API at {API_BASE}.") from exc
 
@@ -1080,11 +1106,13 @@ class ReelPushDesktop(tk.Tk):
                     messagebox.showerror("ReelPush", payload)
                 elif action == "profile-saved":
                     self.status_var.set("Publishing details saved.")
+                    self._wi_success("Draft saved.")
                     self._update_character_counts()
                     self._refresh_delivery_readiness()
                 elif action == "stage-saved":
                     self.latest_staged = payload
                     self.status_var.set("Staged publish saved.")
+                    self._wi_success("Stage saved.")
                     self._refresh_delivery_readiness()
                 elif action == "uploaded":
                     upload = payload
@@ -1092,12 +1120,15 @@ class ReelPushDesktop(tk.Tk):
                     self.current_file_path = upload["original_filename"]
                     self._update_video_preview()
                     self.status_var.set("Video uploaded. Save stage when ready.")
+                    self._wi_success("Video uploaded.")
                     self._refresh_delivery_readiness()
                 elif action == "published":
                     self._show_publish_results(payload)
+                    self._wi_success("Publish complete.")
                 elif action == "operation-error":
                     messagebox.showerror("ReelPush", payload)
                     self.status_var.set(payload)
+                    self._wi_error(payload)
                 elif action == "credential-test-ok":
                     platform = payload["platform"]
                     row = self.account_rows.get(platform)
@@ -1114,6 +1145,7 @@ class ReelPushDesktop(tk.Tk):
                         credential_status.set(payload["message"])
                         credential_status_label.configure(style="Good.TLabel")
                     self.status_var.set(payload["message"])
+                    self._wi_success(f"{platform.title()}: verified.")
                     self.load_workspace_data()
                 elif action == "credential-test-error":
                     platform = payload["platform"]
@@ -1131,6 +1163,7 @@ class ReelPushDesktop(tk.Tk):
                         credential_status.set(payload["message"])
                         credential_status_label.configure(style="Bad.TLabel")
                     self.status_var.set(f"{platform.title()} credential test failed.")
+                    self._wi_error(f"{platform.title()}: {payload['message']}")
                     self.load_workspace_data()
                 elif action == "server-connection-tested":
                     ok = payload.get("ok", False)
@@ -1162,13 +1195,88 @@ class ReelPushDesktop(tk.Tk):
     def _run_bg(self, work, success_action: str | None = None) -> None:
         def runner() -> None:
             try:
-                result = work()
+                result = self._call_with_reauth(work)
                 if success_action:
                     self.results_queue.put((success_action, result))
             except Exception as exc:  # noqa: BLE001
                 self.results_queue.put(("operation-error", str(exc)))
 
         threading.Thread(target=runner, daemon=True).start()
+
+    # ─── Working indicator ────────────────────────────────────────────────────
+
+    def _wi_show(self, msg: str) -> None:
+        """Show or update the transient working indicator in the top-right corner."""
+        if hasattr(self, "_wi_hide_id"):
+            self.after_cancel(self._wi_hide_id)
+            del self._wi_hide_id
+        c = self.colors
+        if not hasattr(self, "_wi_frame"):
+            frame = tk.Frame(self, bg=c["secondary"], padx=12, pady=7)
+            self._wi_var = tk.StringVar()
+            self._wi_label = tk.Label(
+                frame,
+                textvariable=self._wi_var,
+                bg=c["secondary"],
+                fg=c["muted"],
+                font=self.muted_font,
+            )
+            self._wi_label.pack()
+            self._wi_frame = frame
+        self._wi_var.set(msg)
+        self._wi_frame.configure(bg=c["secondary"])
+        self._wi_label.configure(bg=c["secondary"], fg=c["muted"])
+        self._wi_frame.place(relx=1.0, rely=0.0, anchor="ne", x=-16, y=16)
+        self._wi_frame.lift()
+
+    def _wi_success(self, msg: str) -> None:
+        """Briefly show a success message then auto-hide the indicator."""
+        if not hasattr(self, "_wi_frame"):
+            return
+        if hasattr(self, "_wi_hide_id"):
+            self.after_cancel(self._wi_hide_id)
+        c = self.colors
+        self._wi_var.set(msg)
+        self._wi_frame.configure(bg=c["accent_panel"])
+        self._wi_label.configure(bg=c["accent_panel"], fg=c["good"])
+        self._wi_frame.place(relx=1.0, rely=0.0, anchor="ne", x=-16, y=16)
+        self._wi_frame.lift()
+        self._wi_hide_id = self.after(2500, self._wi_hide)
+
+    def _wi_error(self, msg: str) -> None:
+        """Show an error in the indicator. Auto-hides after 8 seconds."""
+        if not hasattr(self, "_wi_frame"):
+            return
+        if hasattr(self, "_wi_hide_id"):
+            self.after_cancel(self._wi_hide_id)
+        c = self.colors
+        display = msg[:80] + ("…" if len(msg) > 80 else "")
+        self._wi_var.set(display)
+        self._wi_frame.configure(bg=c["accent_panel"])
+        self._wi_label.configure(bg=c["accent_panel"], fg=c["bad"])
+        self._wi_frame.place(relx=1.0, rely=0.0, anchor="ne", x=-16, y=16)
+        self._wi_frame.lift()
+        self._wi_hide_id = self.after(8000, self._wi_hide)
+
+    def _wi_hide(self) -> None:
+        """Hide the working indicator."""
+        if hasattr(self, "_wi_frame"):
+            self._wi_frame.place_forget()
+        if hasattr(self, "_wi_hide_id"):
+            del self._wi_hide_id
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _call_with_reauth(self, work):
+        try:
+            return work()
+        except AuthExpiredError:
+            email = self.desktop_settings.get("login_email", "")
+            password = self.desktop_settings.get("login_password", "")
+            if not email or not password:
+                raise RuntimeError("Session expired. Sign in again, then retry.") from None
+            self.client.login(email, password)
+            return work()
 
     def _collect_runtime_statuses(self) -> dict[str, dict[str, Any]]:
         statuses = {
@@ -2753,12 +2861,21 @@ class ReelPushDesktop(tk.Tk):
         size = upload.get("file_size_bytes")
         if width and height:
             parts.append(f"{width}x{height}")
-        if duration:
-            parts.append(f"{duration:.1f}s" if isinstance(duration, float) else f"{duration}s")
+        if duration is not None:
+            secs = int(duration)
+            parts.append(f"{secs // 60}:{secs % 60:02d}")
         if size:
             parts.append(f"{size / (1024 * 1024):.1f} MB")
-        if upload.get("mime_type"):
-            parts.append(upload["mime_type"])
+        mime = upload.get("mime_type") or ""
+        fmt_label = {
+            "video/mp4": "MP4",
+            "video/quicktime": "MOV",
+            "video/webm": "WebM",
+            "video/x-msvideo": "AVI",
+            "video/x-matroska": "MKV",
+        }.get(mime, mime)
+        if fmt_label:
+            parts.append(fmt_label)
         return " | ".join(parts) if parts else "Video metadata will appear after upload analysis."
 
     @staticmethod
@@ -2767,8 +2884,8 @@ class ReelPushDesktop(tk.Tk):
         if not warnings:
             return ""
         visible = warnings[:3]
-        suffix = f" (+{len(warnings) - len(visible)} more)" if len(warnings) > len(visible) else ""
-        return "Check video: " + " ".join(f"- {warning}" for warning in visible) + suffix
+        suffix = f"\n(+{len(warnings) - len(visible)} more)" if len(warnings) > len(visible) else ""
+        return "Check video:\n" + "\n".join(f"• {w}" for w in visible) + suffix
 
     def _update_video_preview(self) -> None:
         if not hasattr(self, "file_var"):
@@ -3237,7 +3354,7 @@ class ReelPushDesktop(tk.Tk):
 
         def _save_worker() -> None:
             try:
-                result = work()
+                result = self._call_with_reauth(work)
                 self.results_queue.put(("cred-save-ok", result))
             except Exception as exc:  # noqa: BLE001
                 self.results_queue.put(("cred-save-error", str(exc)))
@@ -3248,7 +3365,7 @@ class ReelPushDesktop(tk.Tk):
     def load_credentials_from_cloud(self) -> None:
         def _load_worker() -> None:
             try:
-                result = self.client.get_app_settings()
+                result = self._call_with_reauth(self.client.get_app_settings)
                 self.results_queue.put(("cred-load-ok", result))
             except Exception as exc:  # noqa: BLE001
                 self.results_queue.put(("cred-load-error", str(exc)))
@@ -3465,7 +3582,7 @@ class ReelPushDesktop(tk.Tk):
 
         def runner() -> None:
             try:
-                self.results_queue.put(("data-loaded", work()))
+                self.results_queue.put(("data-loaded", self._call_with_reauth(work)))
             except Exception as exc:  # noqa: BLE001
                 self.results_queue.put(("data-error", str(exc)))
 
@@ -3731,6 +3848,7 @@ class ReelPushDesktop(tk.Tk):
     def save_profile(self) -> None:
         payload = self._current_profile_payload()
         self.status_var.set("Saving publishing details…")
+        self._wi_show("Saving draft…")
         self._run_bg(lambda: self.client.update_profile(payload), "profile-saved")
 
     def choose_video(self) -> None:
@@ -3745,6 +3863,7 @@ class ReelPushDesktop(tk.Tk):
             return
 
         self.status_var.set("Uploading video to ReelPush…")
+        self._wi_show("Uploading video…")
         self.current_file_path = file_path
         self._run_bg(lambda: self.client.upload_file(file_path), "uploaded")
 
@@ -3760,6 +3879,7 @@ class ReelPushDesktop(tk.Tk):
             messagebox.showwarning("No platforms", "Select at least one platform.")
             return
         self.status_var.set("Saving details and staged publish…")
+        self._wi_show("Saving stage…")
         assert self.staged_upload is not None
         upload_id = self.staged_upload["id"]
         profile_payload = self._current_profile_payload()
@@ -3772,6 +3892,7 @@ class ReelPushDesktop(tk.Tk):
 
     def clear_stage(self) -> None:
         self.status_var.set("Clearing staged publish…")
+        self._wi_show("Clearing stage…")
 
         def work() -> Any:
             result = self.client.clear_staged()
@@ -3838,6 +3959,8 @@ class ReelPushDesktop(tk.Tk):
             )
             return
         self.status_var.set("Saving details and publishing staged video…")
+        platform_label = " and ".join(p.title() for p in platforms)
+        self._wi_show(f"Publishing to {platform_label}…")
         assert self.staged_upload is not None
         publish_payload = self._current_profile_payload()
         publish_payload.update(
@@ -3883,7 +4006,7 @@ class ReelPushDesktop(tk.Tk):
 
     def connect_platform(self, platform: str) -> None:
         try:
-            url = self.client.oauth_connect_url(platform)
+            url = self._call_with_reauth(lambda: self.client.oauth_connect_url(platform))
             webbrowser.open(url)
             if platform == "youtube":
                 self.status_var.set(
@@ -3916,10 +4039,11 @@ class ReelPushDesktop(tk.Tk):
             credential_status.set("Testing...")
             credential_status_label.configure(style="Muted.TLabel")
         self.status_var.set(f"Testing {platform.title()} credentials…")
+        self._wi_show(f"Testing {platform.title()} credentials…")
 
         def runner() -> None:
             try:
-                result = self.client.oauth_test_credentials(platform)
+                result = self._call_with_reauth(lambda: self.client.oauth_test_credentials(platform))
                 self.results_queue.put(
                     (
                         "credential-test-ok",

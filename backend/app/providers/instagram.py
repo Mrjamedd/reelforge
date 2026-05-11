@@ -118,13 +118,38 @@ class InstagramProvider(PlatformProvider):
             long_lived = ll_resp.json()
             access_token = long_lived["access_token"]
 
-            # Fetch IG user info via Graph API
             user_resp = await client.get(
                 f"{GRAPH_API_BASE}/me",
                 params={"fields": "id,name", "access_token": access_token},
             )
             user_resp.raise_for_status()
-            user_data = user_resp.json()
+            facebook_user = user_resp.json()
+
+            # Fetch the Instagram Professional account linked to one of the user's Pages.
+            user_resp = await client.get(
+                f"{GRAPH_API_BASE}/me/accounts",
+                params={
+                    "fields": "id,name,instagram_business_account{id,username}",
+                    "access_token": access_token,
+                },
+            )
+            user_resp.raise_for_status()
+            pages = user_resp.json().get("data", [])
+
+        page_data = None
+        instagram_account = None
+        for page in pages:
+            candidate = page.get("instagram_business_account")
+            if isinstance(candidate, dict) and candidate.get("id"):
+                page_data = page
+                instagram_account = candidate
+                break
+
+        if not instagram_account:
+            raise ValueError(
+                "No Instagram Professional account linked to a Facebook Page was returned. "
+                "Connect a Business or Creator Instagram account to a Facebook Page, then reconnect."
+            )
 
         return OAuthTokens(
             access_token=access_token,
@@ -134,8 +159,16 @@ class InstagramProvider(PlatformProvider):
                 tz=timezone.utc,
             ),
             scopes=REQUIRED_SCOPES,
-            platform_user_id=user_data["id"],
-            platform_username=user_data.get("name"),
+            platform_user_id=instagram_account["id"],
+            platform_username=instagram_account.get("username") or page_data.get("name"),
+            extra_data={
+                "instagram_user_id": instagram_account["id"],
+                "instagram_username": instagram_account.get("username"),
+                "facebook_user_id": facebook_user.get("id"),
+                "facebook_user_name": facebook_user.get("name"),
+                "facebook_page_id": page_data.get("id"),
+                "facebook_page_name": page_data.get("name"),
+            },
         )
 
     async def refresh_auth(self, account: PlatformAccount) -> OAuthTokens:
@@ -189,7 +222,12 @@ class InstagramProvider(PlatformProvider):
 
     # ─── Publishing ───────────────────────────────────────────────────────────
 
-    async def create_upload(self, account: PlatformAccount, video_path: str) -> str:
+    async def create_upload(
+        self,
+        account: PlatformAccount,
+        video_path: str,
+        payload: PublishPayload | None = None,
+    ) -> str:
         """
         Step 1: Create an Instagram media container for a Reel.
         Returns the container_id.
@@ -200,17 +238,20 @@ class InstagramProvider(PlatformProvider):
         TODO: Requires instagram_content_publish permission (approved app).
         """
         access_token = decrypt_token(account.access_token_encrypted)
-        ig_user_id = account.platform_user_id
+        caption = self._caption_for_payload(payload) if payload else ""
 
         async with httpx.AsyncClient() as client:
+            ig_user_id = await self._resolve_instagram_user_id(client, account, access_token)
+            data = {
+                "media_type": "REELS",
+                "video_url": video_path,
+                "access_token": access_token,
+            }
+            if caption:
+                data["caption"] = caption
             resp = await client.post(
                 f"{GRAPH_API_BASE}/{ig_user_id}/media",
-                data={
-                    "media_type": "REELS",
-                    "video_url": video_path,  # must be publicly accessible
-                    "caption": "",  # filled in publish_now
-                    "access_token": access_token,
-                },
+                data=data,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -230,16 +271,9 @@ class InstagramProvider(PlatformProvider):
         `upload_id` here is the container_id from create_upload().
         """
         access_token = decrypt_token(account.access_token_encrypted)
-        ig_user_id = account.platform_user_id
 
-        # Build caption with hashtags
-        caption = payload.caption or ""
-        if payload.hashtags:
-            caption += " " + " ".join(f"#{t}" for t in payload.hashtags)
-        caption = caption.strip()[:2200]
-
-        # Update container with actual caption before publishing
         async with httpx.AsyncClient() as client:
+            ig_user_id = await self._resolve_instagram_user_id(client, account, access_token)
             # Poll until the container is ready (status = FINISHED)
             for attempt in range(15):
                 status_resp = await client.get(
@@ -281,6 +315,36 @@ class InstagramProvider(PlatformProvider):
             platform_post_id=post_id,
             platform_post_url=f"https://www.instagram.com/p/{post_id}/",
             raw_response=pub_data,
+        )
+
+    @staticmethod
+    def _caption_for_payload(payload: PublishPayload) -> str:
+        caption = payload.caption or ""
+        if payload.hashtags:
+            caption += " " + " ".join(f"#{t}" for t in payload.hashtags)
+        return caption.strip()[:2200]
+
+    async def _resolve_instagram_user_id(
+        self,
+        client: httpx.AsyncClient,
+        account: PlatformAccount,
+        access_token: str,
+    ) -> str:
+        resp = await client.get(
+            f"{GRAPH_API_BASE}/me/accounts",
+            params={
+                "fields": "id,name,instagram_business_account{id,username}",
+                "access_token": access_token,
+            },
+        )
+        resp.raise_for_status()
+        for page in resp.json().get("data", []):
+            candidate = page.get("instagram_business_account")
+            if isinstance(candidate, dict) and candidate.get("id"):
+                return candidate["id"]
+        raise ValueError(
+            "No Instagram Professional account linked to a Facebook Page was returned. "
+            "Connect a Business or Creator Instagram account to a Facebook Page, then reconnect Instagram."
         )
 
     async def get_post_status(

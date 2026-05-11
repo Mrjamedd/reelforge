@@ -172,7 +172,12 @@ class YouTubeProvider(PlatformProvider):
 
     # ─── Publishing ───────────────────────────────────────────────────────────
 
-    async def create_upload(self, account: PlatformAccount, video_path: str) -> str:
+    async def create_upload(
+        self,
+        account: PlatformAccount,
+        video_path: str,
+        payload: PublishPayload | None = None,
+    ) -> str:
         """
         YouTube upload is handled inline in publish_now() because it needs the
         final metadata payload at session creation time.

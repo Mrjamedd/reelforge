@@ -20,23 +20,18 @@ privacy_enum = postgresql.ENUM(
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-
     op.add_column(
         "platform_accounts",
         sa.Column("owner_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
 
-    first_admin_id = bind.execute(
-        sa.text("SELECT id FROM admin_users ORDER BY created_at ASC LIMIT 1")
-    ).scalar()
-    if first_admin_id is not None:
-        bind.execute(
-            sa.text(
-                "UPDATE platform_accounts SET owner_id = :owner_id WHERE owner_id IS NULL"
-            ),
-            {"owner_id": first_admin_id},
-        )
+    op.execute(
+        """
+        UPDATE platform_accounts
+        SET owner_id = (SELECT id FROM admin_users ORDER BY created_at ASC LIMIT 1)
+        WHERE owner_id IS NULL
+        """
+    )
 
     op.alter_column("platform_accounts", "owner_id", nullable=False)
     op.create_foreign_key(

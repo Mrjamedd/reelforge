@@ -10,7 +10,10 @@ import sys
 import tempfile
 from unittest.mock import MagicMock
 
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tempfile.gettempdir()}/reelpush-test-{os.getpid()}.db"
+test_dir = tempfile.gettempdir()
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{test_dir}/reelpush-test-{os.getpid()}.db"
+os.environ["LOCAL_STORAGE_PATH"] = f"{test_dir}/reelpush-test-storage-{os.getpid()}"
+os.environ["STORAGE_BACKEND"] = "local"
 
 if "magic" not in sys.modules:
     sys.modules["magic"] = MagicMock()

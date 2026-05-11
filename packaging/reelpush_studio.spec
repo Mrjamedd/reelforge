@@ -75,8 +75,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "ReelPush Studio",
             "CFBundleDisplayName": "ReelPush Studio",
-            "CFBundleShortVersionString": "1.0.0",
-            "CFBundleVersion": "1",
+            "CFBundleShortVersionString": "1.1.0",
+            "CFBundleVersion": "2",
             "LSApplicationCategoryType": "public.app-category.productivity",
             "NSHighResolutionCapable": True,
             "NSRequiresAquaSystemAppearance": False,

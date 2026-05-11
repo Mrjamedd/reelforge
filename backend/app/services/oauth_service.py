@@ -101,7 +101,7 @@ class OAuthService:
         self, db: AsyncSession, account: PlatformAccount
     ) -> PlatformAccount:
         """Refresh the access token for an account if it has expired or is close to expiry."""
-        if account.refresh_token_encrypted is None:
+        if account.refresh_token_encrypted is None and account.platform != Platform.INSTAGRAM:
             await self.mark_credential_health(
                 db,
                 account,

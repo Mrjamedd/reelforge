@@ -128,7 +128,12 @@ class PlatformProvider(ABC):
     # ─── Publishing ───────────────────────────────────────────────────────────
 
     @abstractmethod
-    async def create_upload(self, account: PlatformAccount, video_path: str) -> str:
+    async def create_upload(
+        self,
+        account: PlatformAccount,
+        video_path: str,
+        payload: PublishPayload | None = None,
+    ) -> str:
         """
         Initiate a video upload to the platform.
         Returns an upload session ID / resource URL used by publish_now().

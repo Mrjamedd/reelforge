@@ -6,13 +6,18 @@ Abstracts storage backend (local filesystem or S3-compatible).
 """
 
 import os
+import re
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
 
 import ffmpeg
-import magic
+
+try:
+    import magic
+except ImportError:
+    magic = None
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -34,12 +39,42 @@ MAX_DURATION_SECONDS = 180  # 3 min — TikTok/Reels max is ~90s for most cases
 MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB
 NORMALIZED_WIDTH = 1080
 NORMALIZED_HEIGHT = 1920
-NORMALIZED_VIDEO_BITRATE = "6000k"
+NORMALIZED_VIDEO_BITRATE = "4000k"
 NORMALIZED_AUDIO_BITRATE = "128k"
+# veryfast: low CPU/memory, negligible quality loss at 4000k — required on constrained servers
+ENCODING_PRESET = "veryfast"
 SHORTS_MAX_SECONDS = 180
 COMMON_SHORT_FORM_MIN_SECONDS = 3
 TIKTOK_MIN_DIMENSION = 360
 RECOMMENDED_VERTICAL_RATIO = 9 / 16
+
+
+_FFMPEG_ERROR_PATTERNS = [
+    (re.compile(r"moov atom not found", re.I), "Invalid or incomplete file (missing MP4 container atoms)"),
+    (re.compile(r"Invalid data found when processing input", re.I), "Invalid or corrupt video data"),
+    (re.compile(r"No such (?:encoder|decoder)\b", re.I), "Required FFmpeg codec not available"),
+    (re.compile(r"(?:Decoder|codec).*hevc.*not found|hevc.*(?:Decoder|codec).*not found", re.I), "HEVC decoder not available in this FFmpeg build"),
+    (re.compile(r"(?:libx264|x264|H\.264 encoder).*not found|encoder.*libx264.*not found", re.I), "H.264 encoder unavailable in this FFmpeg build"),
+    (re.compile(r"no video stream|no streams", re.I), "No video stream found in file"),
+    (re.compile(r"Permission denied", re.I), "File permission error"),
+    (re.compile(r"Error while decoding stream", re.I), "Video decode error (file may be corrupt or use an unsupported variant)"),
+    (re.compile(r"(?:Trailing garbage|truncated|unexpected end)", re.I), "Truncated or incomplete video file"),
+    (re.compile(r"Could not find codec parameters", re.I), "Could not read codec parameters (unsupported format or corrupt file)"),
+    (re.compile(r"(?:ProRes|prores).*not found|Codec.*ap[0-9a-z]+.*not found", re.I), "Apple ProRes codec not available — try exporting as H.264"),
+    (re.compile(r"(?:ffmpeg|ffprobe) is not installed|FileNotFoundError.*ffmpeg", re.I), "FFmpeg is not installed or not on PATH"),
+]
+
+
+def _safe_ffmpeg_reason(stderr: str) -> str:
+    """Extract a short, safe failure reason from FFmpeg stderr."""
+    for pattern, message in _FFMPEG_ERROR_PATTERNS:
+        if pattern.search(stderr):
+            return message
+    for line in reversed(stderr.splitlines()):
+        stripped = line.strip()
+        if stripped and not stripped.startswith(("frame=", "size=", "time=", "bitrate=", "speed=")) and "fps=" not in stripped:
+            return stripped[:120]
+    return "Unknown FFmpeg error"
 
 
 class MediaValidationError(Exception):
@@ -56,13 +91,22 @@ class MediaService:
 
     # ─── Validation ───────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _require_magic():
+        if magic is None:
+            raise MediaValidationError(
+                "Video file type validation requires libmagic. "
+                "Install libmagic locally or run ReelPush through Docker."
+            )
+        return magic
+
     def validate_video(self, file_bytes: bytes, filename: str) -> dict:
         """
         Validate raw file bytes as a supported video.
         Returns metadata dict if valid; raises MediaValidationError if not.
         """
         # MIME type check via magic bytes (not filename extension)
-        mime = magic.from_buffer(file_bytes[:2048], mime=True)
+        mime = self._require_magic().from_buffer(file_bytes[:2048], mime=True)
         if mime not in ALLOWED_MIME_TYPES:
             raise MediaValidationError(
                 f"Unsupported file type: {mime}. "
@@ -86,7 +130,7 @@ class MediaService:
         if not path.is_file():
             raise MediaValidationError(f"Video file not found: {file_path}")
 
-        mime = magic.from_file(str(path), mime=True)
+        mime = self._require_magic().from_file(str(path), mime=True)
         if mime not in ALLOWED_MIME_TYPES:
             raise MediaValidationError(
                 f"Unsupported file type: {mime}. "
@@ -352,53 +396,116 @@ class MediaService:
 
     def normalize_for_short_form(self, source_path: str) -> str:
         """
-        Convert any accepted input video into a conservative MP4 preset accepted
-        by YouTube Shorts, Instagram Reels, and TikTok.
+        Convert any accepted input video into a conservative H.264/AAC MP4 preset
+        accepted by YouTube Shorts, Instagram Reels, and TikTok.
+
+        Uses inp.video to keep the filter chain video-only, then maps audio
+        separately so FFmpeg receives a valid audio input when the source has audio.
+        For HDR sources (HLG/HDR10) attempts a zscale+tonemap pass first, then
+        falls back to the standard path if libzimg is unavailable.
         """
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             output_path = tmp.name
 
+        # Probe source once: determine HDR and audio presence
         try:
-            (
-                ffmpeg
-                .input(source_path)
-                .filter(
-                    "scale",
-                    NORMALIZED_WIDTH,
-                    NORMALIZED_HEIGHT,
-                    force_original_aspect_ratio="decrease",
-                )
-                .filter(
-                    "pad",
-                    NORMALIZED_WIDTH,
-                    NORMALIZED_HEIGHT,
-                    "(ow-iw)/2",
-                    "(oh-ih)/2",
-                    color="black",
-                )
-                .output(
-                    output_path,
-                    format="mp4",
-                    vcodec="libx264",
-                    acodec="aac",
-                    pix_fmt="yuv420p",
-                    r=30,
-                    movflags="+faststart",
-                    preset="medium",
-                    **{
-                        "b:v": NORMALIZED_VIDEO_BITRATE,
-                        "b:a": NORMALIZED_AUDIO_BITRATE,
-                    },
-                )
-                .overwrite_output()
-                .run(quiet=True)
-            )
-            return output_path
+            probe = ffmpeg.probe(source_path)
         except ffmpeg.Error as e:
             Path(output_path).unlink(missing_ok=True)
             stderr = e.stderr.decode("utf-8", errors="ignore") if e.stderr else str(e)
-            logger.error("short_form_normalization_failed", error=stderr)
-            raise MediaValidationError("Video could not be converted to the ReelPush MP4 preset.") from e
+            raise MediaValidationError(
+                f"Could not read video file. Reason: {_safe_ffmpeg_reason(stderr)}"
+            ) from e
+
+        streams = probe.get("streams", [])
+        video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+        if not video_stream:
+            Path(output_path).unlink(missing_ok=True)
+            raise MediaValidationError("No video stream found in file.")
+
+        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+        is_hdr = (
+            video_stream.get("color_trc") in ("smpte2084", "arib-std-b67")
+            or video_stream.get("color_space") in ("bt2020nc", "bt2020c")
+        )
+
+        video_output_kwargs = dict(
+            vcodec="libx264",
+            pix_fmt="yuv420p",
+            r=30,
+            preset=ENCODING_PRESET,
+            threads=2,
+            **{"b:v": NORMALIZED_VIDEO_BITRATE},
+        )
+        audio_output_kwargs = (
+            dict(acodec="aac", ac=2, **{"b:a": NORMALIZED_AUDIO_BITRATE})
+            if has_audio
+            else {}
+        )
+        output_kwargs = dict(
+            format="mp4",
+            movflags="+faststart",
+            **video_output_kwargs,
+            **audio_output_kwargs,
+        )
+
+        last_stderr = ""
+
+        # For HDR, try libzimg tonemapping first; fall back to standard path
+        for use_tonemap in ([True, False] if is_hdr else [False]):
+            Path(output_path).unlink(missing_ok=True)
+            try:
+                inp = ffmpeg.input(source_path)
+
+                # CRITICAL: use inp.video so the filter chain is video-only.
+                # Audio is mapped separately via inp.audio to avoid the FFmpeg
+                # "no audio stream mapped" error that occurs when the whole input
+                # node is fed into a video filter graph.
+                if use_tonemap:
+                    processed_video = (
+                        inp.video
+                        .filter("zscale", t="linear", npl=100)
+                        .filter("format", "gbrpf32le")
+                        .filter("zscale", p="bt709")
+                        .filter("tonemap", tonemap="hable", desat=0)
+                        .filter("zscale", t="bt709", m="bt709", r="tv")
+                        .filter("scale", NORMALIZED_WIDTH, NORMALIZED_HEIGHT, force_original_aspect_ratio="decrease")
+                        .filter("pad", NORMALIZED_WIDTH, NORMALIZED_HEIGHT, "(ow-iw)/2", "(oh-ih)/2", color="black")
+                        .filter("format", "yuv420p")
+                    )
+                else:
+                    processed_video = (
+                        inp.video
+                        .filter("scale", NORMALIZED_WIDTH, NORMALIZED_HEIGHT, force_original_aspect_ratio="decrease")
+                        .filter("pad", NORMALIZED_WIDTH, NORMALIZED_HEIGHT, "(ow-iw)/2", "(oh-ih)/2", color="black")
+                    )
+
+                if has_audio:
+                    out_stream = ffmpeg.output(processed_video, inp.audio, output_path, **output_kwargs)
+                else:
+                    out_stream = ffmpeg.output(processed_video, output_path, **output_kwargs)
+
+                out_stream.overwrite_output().run(quiet=True)
+
+                if is_hdr:
+                    logger.info(
+                        "hdr_conversion_succeeded",
+                        source=source_path,
+                        method="tonemap" if use_tonemap else "passthrough",
+                    )
+                return output_path
+
+            except ffmpeg.Error as e:
+                last_stderr = e.stderr.decode("utf-8", errors="ignore") if e.stderr else str(e)
+                if use_tonemap:
+                    logger.warning("hdr_tonemap_failed_trying_fallback", error=last_stderr[:400])
+
+        Path(output_path).unlink(missing_ok=True)
+        reason = _safe_ffmpeg_reason(last_stderr)
+        logger.error("short_form_normalization_failed", error=last_stderr, reason=reason)
+        raise MediaValidationError(
+            f"Video could not be converted to the ReelPush MP4 preset. Reason: {reason}"
+        ) from None
 
     # ─── S3 helpers ───────────────────────────────────────────────────────────
 

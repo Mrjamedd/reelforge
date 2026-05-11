@@ -162,7 +162,12 @@ class TikTokProvider(PlatformProvider):
 
     # ─── Publishing ───────────────────────────────────────────────────────────
 
-    async def create_upload(self, account: PlatformAccount, video_path: str) -> str:
+    async def create_upload(
+        self,
+        account: PlatformAccount,
+        video_path: str,
+        payload: PublishPayload | None = None,
+    ) -> str:
         """
         Initialize a TikTok upload session using the Content Posting API.
         Returns the TikTok publish_id to be used in publish_now().

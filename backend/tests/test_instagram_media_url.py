@@ -46,12 +46,18 @@ def test_local_provider_is_not_publicly_accessible():
     assert provider.is_publicly_accessible is False
 
 
+def test_local_provider_is_publicly_accessible_with_public_https_url():
+    provider = LocalStorageProvider(api_url="https://sandra-democrats-mph-office.trycloudflare.com")
+    assert provider.is_publicly_accessible is True
+    assert provider.configuration_errors == []
+
+
 def test_local_provider_has_configuration_errors():
     provider = LocalStorageProvider(api_url="http://localhost:8000")
     errors = provider.configuration_errors
     assert len(errors) >= 1
-    assert any("publicly accessible" in e.lower() for e in errors)
-    assert any("S3_BUCKET" in e for e in errors)
+    assert any("public HTTPS" in e for e in errors)
+    assert any("API_URL" in e for e in errors)
 
 
 @pytest.mark.asyncio

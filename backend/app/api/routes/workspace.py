@@ -152,6 +152,7 @@ async def get_app_settings(
     if not row or not row.credentials_enc:
         return AppSettingsOut()
     data = _decrypt_settings(row.credentials_enc)
+    set_runtime_creds(data)
     return AppSettingsOut(updated_at=row.updated_at, **data)
 
 

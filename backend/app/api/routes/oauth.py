@@ -1,6 +1,7 @@
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import ffmpeg
 import httpx
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config import get_effective_cred, get_settings
+from app.core.logging import get_logger
 from app.core.security import decrypt_token
 from app.db.session import get_db
 from app.models.models import AdminUser, Platform, PlatformAccount
@@ -21,6 +23,7 @@ from app.services.oauth_service import OAuthService
 
 router = APIRouter(prefix="/oauth", tags=["oauth"])
 settings = get_settings()
+logger = get_logger("api.oauth")
 oauth_svc = OAuthService()
 
 REQUIRED_CREDENTIALS: dict[Platform, tuple[str, ...]] = {
@@ -68,6 +71,77 @@ def _stored_credential_health(account) -> dict:
         return {}
     health = account.extra_data.get("credential_health")
     return health if isinstance(health, dict) else {}
+
+
+async def _instagram_link_diagnostics(db: AsyncSession, account: PlatformAccount) -> dict | None:
+    access_token = decrypt_token(account.access_token_encrypted)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://graph.facebook.com/v19.0/me/accounts",
+                params={
+                    "fields": "id,name,instagram_business_account{id,username}",
+                    "access_token": access_token,
+                },
+            )
+            resp.raise_for_status()
+            pages = resp.json().get("data", [])
+    except Exception as exc:  # noqa: BLE001
+        credential_problem = oauth_svc.is_credential_failure(exc)
+        return {
+            "credential_status": "invalid" if credential_problem else "warning",
+            "credential_detail": (
+                oauth_svc.describe_credential_failure(exc)
+                if credential_problem
+                else f"Could not verify the linked Instagram Professional account right now: {exc}"
+            ),
+            "next_action": (
+                "Reconnect Instagram and approve Page/Instagram permissions."
+                if credential_problem
+                else "Try again when Meta's API is reachable."
+            ),
+            "missing_credentials": [],
+            "can_publish": False,
+        }
+
+    page_data = None
+    instagram_account = None
+    for page in pages:
+        candidate = page.get("instagram_business_account")
+        if isinstance(candidate, dict) and candidate.get("id"):
+            page_data = page
+            instagram_account = candidate
+            break
+
+    if not instagram_account:
+        return {
+            "credential_status": "invalid",
+            "credential_detail": (
+                "No Instagram Professional account linked to a Facebook Page was returned. "
+                "Instagram publishing requires a Business or Creator account linked to a Facebook Page."
+            ),
+            "next_action": "Link the Instagram account to a Facebook Page, then reconnect Instagram.",
+            "missing_credentials": [],
+            "can_publish": False,
+        }
+
+    if account.platform_user_id != instagram_account["id"]:
+        account.platform_user_id = instagram_account["id"]
+        account.platform_username = instagram_account.get("username") or account.platform_username
+        extra = dict(account.extra_data or {})
+        extra.update(
+            {
+                "instagram_user_id": instagram_account["id"],
+                "instagram_username": instagram_account.get("username"),
+                "facebook_page_id": page_data.get("id") if page_data else None,
+                "facebook_page_name": page_data.get("name") if page_data else None,
+            }
+        )
+        account.extra_data = extra
+        await db.commit()
+        await db.refresh(account)
+
+    return None
 
 
 async def _credential_diagnostics(
@@ -139,6 +213,11 @@ async def _credential_diagnostics(
             "can_publish": False,
         }
 
+    if platform == Platform.INSTAGRAM and account is not None:
+        instagram_issue = await _instagram_link_diagnostics(db, account)
+        if instagram_issue:
+            return instagram_issue
+
     stored_health = _stored_credential_health(account)
     if provider.requires_app_review:
         return {
@@ -189,12 +268,12 @@ async def _run_platform_credential_test(
 
         if platform == Platform.INSTAGRAM:
             resp = await client.get(
-                "https://graph.facebook.com/v19.0/me",
-                params={"fields": "id,name", "access_token": access_token},
+                f"https://graph.facebook.com/v19.0/{account.platform_user_id}",
+                params={"fields": "id,username", "access_token": access_token},
             )
             resp.raise_for_status()
             data = resp.json()
-            name = data.get("name") or account.platform_username or "account"
+            name = data.get("username") or account.platform_username or "account"
             return (f"Instagram credentials verified for {name}.", data)
 
         if platform == Platform.TIKTOK:
@@ -290,7 +369,7 @@ async def _run_platform_post_delete_test(
         if errors:
             raise ValueError("Validation failed: " + "; ".join(errors))
 
-        upload_id = await provider.create_upload(account, payload.video_path)
+        upload_id = await provider.create_upload(account, payload.video_path, payload)
         result = await provider.publish_now(account, upload_id, payload)
         if not result.success or not result.platform_post_id:
             raise ValueError(result.error_message or "The platform did not return a test post ID.")
@@ -394,11 +473,21 @@ async def oauth_callback(
         )
     except ValueError as e:
         return RedirectResponse(
-            url=f"{settings.api_url}/api/oauth/complete?oauth_error={str(e)}"
+            url=f"{settings.api_url}/api/oauth/complete?oauth_error={quote(str(e))}"
         )
     except Exception as e:
+        logger.exception(
+            "oauth_callback_unexpected_error",
+            platform=platform.value,
+            error=str(e),
+        )
+        detail = (
+            oauth_svc.describe_credential_failure(e)
+            if oauth_svc.is_credential_failure(e)
+            else "unexpected_error"
+        )
         return RedirectResponse(
-            url=f"{settings.api_url}/api/oauth/complete?oauth_error=unexpected_error"
+            url=f"{settings.api_url}/api/oauth/complete?oauth_error={quote(detail)}"
         )
 
 

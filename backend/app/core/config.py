@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     r2_account_id: str = ""  # Optional: set S3_ENDPOINT_URL automatically for R2
 
     # Admin seed
-    admin_email: str = "mr6jam3@gmail.com"
+    admin_email: str = "admin@example.com"
     admin_password: str | None = None
 
     # App URLs

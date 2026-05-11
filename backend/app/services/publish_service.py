@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.config import get_settings
+from app.core.config import get_effective_cred
 from app.models.models import (
     AuditLog,
     JobStatus,
@@ -42,11 +42,10 @@ SETTINGS_CREDENTIAL_ATTRS: dict[str, str] = {
 
 
 def _missing_credentials(platform: Platform) -> list[str]:
-    settings = get_settings()
     return [
         name
         for name in REQUIRED_CREDENTIALS.get(platform, ())
-        if not getattr(settings, SETTINGS_CREDENTIAL_ATTRS[name], "")
+        if not get_effective_cred(SETTINGS_CREDENTIAL_ATTRS[name])
     ]
 
 

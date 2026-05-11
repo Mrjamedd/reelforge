@@ -122,7 +122,7 @@ async def execute_publish_job(job_id: str, task: Task | None = None) -> dict:
                 return {"success": False, "validation_errors": errors}
 
             # ── Upload video ───────────────────────────────────────────────
-            upload_id = await provider.create_upload(account, payload.video_path)
+            upload_id = await provider.create_upload(account, payload.video_path, payload)
 
             # ── Publish or Schedule ────────────────────────────────────────
             await publish_svc.transition_status(

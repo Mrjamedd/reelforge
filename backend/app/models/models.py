@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -60,6 +61,7 @@ class PrivacyLevel(str, enum.Enum):
 platform_enum_type = Enum(Platform, name="platform", values_callable=enum_values)
 job_status_enum_type = Enum(JobStatus, name="jobstatus", values_callable=enum_values)
 privacy_level_enum_type = Enum(PrivacyLevel, name="privacylevel", values_callable=enum_values)
+json_type = JSON().with_variant(JSONB(), "postgresql")
 
 
 # ─── Admin User ───────────────────────────────────────────────────────────────
@@ -115,7 +117,7 @@ class PlatformAccount(Base):
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scopes: Mapped[str | None] = mapped_column(Text)  # space-separated
-    extra_data: Mapped[dict | None] = mapped_column(JSONB)  # platform-specific extras
+    extra_data: Mapped[dict | None] = mapped_column(json_type)  # platform-specific extras
     connected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -170,7 +172,7 @@ class StagedPublish(Base):
     upload_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("uploads.id"), nullable=True, index=True
     )
-    selected_platforms: Mapped[list[str] | None] = mapped_column(JSONB)
+    selected_platforms: Mapped[list[str] | None] = mapped_column(json_type)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -201,8 +203,8 @@ class Upload(Base):
     duration_seconds: Mapped[float | None] = mapped_column()
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
-    source_metadata: Mapped[dict | None] = mapped_column(JSONB)
-    validation_warnings: Mapped[list[str] | None] = mapped_column(JSONB)
+    source_metadata: Mapped[dict | None] = mapped_column(json_type)
+    validation_warnings: Mapped[list[str] | None] = mapped_column(json_type)
     uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=False
     )
@@ -288,7 +290,7 @@ class AuditLog(Base):
     from_status: Mapped[JobStatus | None] = mapped_column(job_status_enum_type)
     to_status: Mapped[JobStatus] = mapped_column(job_status_enum_type, nullable=False)
     message: Mapped[str | None] = mapped_column(Text)
-    api_response_summary: Mapped[dict | None] = mapped_column(JSONB)
+    api_response_summary: Mapped[dict | None] = mapped_column(json_type)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
