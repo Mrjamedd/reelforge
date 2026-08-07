@@ -17,6 +17,11 @@ from app.core.security import decrypt_token
 from app.db.session import get_db
 from app.models.models import AdminUser, Platform, PlatformAccount
 from app.providers.base import PublishPayload
+from app.providers.instagram import (
+    GRAPH_API_BASE,
+    INSTAGRAM_ACCOUNT_VERIFY_FIELDS,
+    INSTAGRAM_PAGE_LOOKUP_FIELDS,
+)
 from app.providers.registry import all_providers
 from app.schemas.schemas import PlatformAccountOut, PlatformStatusOut
 from app.services.oauth_service import OAuthService
@@ -78,9 +83,9 @@ async def _instagram_link_diagnostics(db: AsyncSession, account: PlatformAccount
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                "https://graph.facebook.com/v19.0/me/accounts",
+                f"{GRAPH_API_BASE}/me/accounts",
                 params={
-                    "fields": "id,name,instagram_business_account{id,username}",
+                    "fields": INSTAGRAM_PAGE_LOOKUP_FIELDS,
                     "access_token": access_token,
                 },
             )
@@ -127,7 +132,11 @@ async def _instagram_link_diagnostics(db: AsyncSession, account: PlatformAccount
 
     if account.platform_user_id != instagram_account["id"]:
         account.platform_user_id = instagram_account["id"]
-        account.platform_username = instagram_account.get("username") or account.platform_username
+        account.platform_username = (
+            instagram_account.get("username")
+            or account.platform_username
+            or (page_data.get("name") if page_data else None)
+        )
         extra = dict(account.extra_data or {})
         extra.update(
             {
@@ -268,12 +277,18 @@ async def _run_platform_credential_test(
 
         if platform == Platform.INSTAGRAM:
             resp = await client.get(
-                f"https://graph.facebook.com/v19.0/{account.platform_user_id}",
-                params={"fields": "id,username", "access_token": access_token},
+                f"{GRAPH_API_BASE}/{account.platform_user_id}",
+                params={"fields": INSTAGRAM_ACCOUNT_VERIFY_FIELDS, "access_token": access_token},
             )
             resp.raise_for_status()
             data = resp.json()
-            name = data.get("username") or account.platform_username or "account"
+            extra = account.extra_data if isinstance(account.extra_data, dict) else {}
+            name = (
+                account.platform_username
+                or extra.get("instagram_username")
+                or extra.get("facebook_page_name")
+                or "account"
+            )
             return (f"Instagram credentials verified for {name}.", data)
 
         if platform == Platform.TIKTOK:

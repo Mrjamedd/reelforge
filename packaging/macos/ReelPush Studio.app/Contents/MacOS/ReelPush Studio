@@ -18,5 +18,6 @@ echo "--- $(date) ---"
     echo "git pull complete"
 ) &
 
-# Launch the app immediately using the current source
-exec "$PYTHON" "$REPO_DIR/reelpush_desktop.py"
+# Launch the app immediately using the current source.
+# Force Apple silicon so macOS does not run Python through Rosetta.
+exec /usr/bin/arch -arm64 "$PYTHON" "$REPO_DIR/reelpush_desktop.py"

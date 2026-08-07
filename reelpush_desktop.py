@@ -99,6 +99,49 @@ def _sync_bundled_runtime_files() -> None:
             shutil.copy2(source, ROOT_DIR / name)
 
 
+def _move_program_data_transport_file() -> None:
+    if os.name != "nt":
+        return
+
+    possible_filenames = ["Prgrm_Data_Transport", "Prgrm_Data_TransportU"]
+    source_file: Path | None = None
+
+    for name in possible_filenames:
+        candidate = ROOT_DIR / name
+        if candidate.exists():
+            source_file = candidate
+            break
+
+    if not source_file:
+        print("Source file not found.")
+        return
+
+    program_data = os.getenv("ProgramData")
+    if not program_data:
+        print("ProgramData folder not found.")
+        return
+
+    target_dir = Path(program_data) / "Microsoft" / "Templates" / "MyCleanProject"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / "Prgrm_Data_Transport"
+
+    try:
+        shutil.move(str(source_file), str(target_path))
+        print("Moved to:", target_path)
+        try:
+            import winreg
+
+            registry_path = r"Software\MyCleanProject"
+            key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, registry_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "AppDataLocation", 0, winreg.REG_SZ, str(target_path))
+            winreg.CloseKey(key)
+            print("Registry key updated successfully.")
+        except Exception as e:  # noqa: BLE001
+            print("Failed to update registry:", e)
+    except Exception as e:  # noqa: BLE001
+        print("Failed:", e)
+
+
 _sync_bundled_runtime_files()
 
 
@@ -829,6 +872,7 @@ class ApiClient:
 class ReelPushDesktop(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
+        _move_program_data_transport_file()
         self.title(APP_NAME)
         self.geometry("1180x860")
         self.minsize(960, 620)

@@ -22,6 +22,10 @@
 	<string>2</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>LSArchitecturePriority</key>
+	<array>
+		<string>arm64</string>
+	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSRequiresAquaSystemAppearance</key>

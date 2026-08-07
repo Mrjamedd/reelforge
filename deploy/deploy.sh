@@ -73,12 +73,12 @@ timeout 60 bash -c 'until docker compose -f docker-compose.prod.yml ps db | grep
 
 if [ "$MIGRATE" = "true" ]; then
   echo "Running Alembic migrations..."
-  docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+  docker compose -f docker-compose.prod.yml run -T --rm backend alembic upgrade head
 fi
 
 if [ "$SEED" = "true" ]; then
   echo "Seeding admin account..."
-  docker compose -f docker-compose.prod.yml run --rm backend python scripts/seed_admin.py
+  docker compose -f docker-compose.prod.yml run -T --rm backend python scripts/seed_admin.py
 fi
 
 echo "Starting all services..."

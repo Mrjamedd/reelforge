@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Instagram / Meta — TODO: requires Meta app review + Business account
     instagram_app_id: str = ""
     instagram_app_secret: str = ""
+    # Override via META_GRAPH_API_VERSION to match the version shown in the
+    # Meta Developer dashboard / Graph API Upgrade Tool.
+    meta_graph_api_version: str = "v21.0"
 
     # YouTube / Google — TODO: requires Google Cloud credentials
     youtube_client_id: str = ""

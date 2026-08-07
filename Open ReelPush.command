@@ -9,4 +9,4 @@ if [ -d "/Applications/ReelPush Studio.app" ]; then
   exec open -n "/Applications/ReelPush Studio.app"
 fi
 
-exec python3 reelpush_desktop.py
+exec /usr/bin/arch -arm64 python3 reelpush_desktop.py

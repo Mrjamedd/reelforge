@@ -1,7 +1,8 @@
 """
 Instagram Platform Provider
 ============================
-Uses the official Meta Instagram Content Publishing API (Graph API v19.0).
+Uses the official Meta Instagram Content Publishing API (Meta Graph API;
+version configurable via the META_GRAPH_API_VERSION env var).
 Docs: https://developers.facebook.com/docs/instagram-api/guides/content-publishing
 
 STATUS: Scaffolded with the correct official API structure.
@@ -46,9 +47,12 @@ from app.providers.base import (
 settings = get_settings()
 logger = get_logger("provider.instagram")
 
-GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
-META_AUTH_BASE = "https://www.facebook.com/v19.0/dialog/oauth"
+GRAPH_API_VERSION = settings.meta_graph_api_version
+GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+META_AUTH_BASE = f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth"
 META_TOKEN_URL = f"{GRAPH_API_BASE}/oauth/access_token"
+INSTAGRAM_PAGE_LOOKUP_FIELDS = "id,name,instagram_business_account{id}"
+INSTAGRAM_ACCOUNT_VERIFY_FIELDS = "id"
 
 REQUIRED_SCOPES = (
     "instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list"
@@ -129,7 +133,7 @@ class InstagramProvider(PlatformProvider):
             user_resp = await client.get(
                 f"{GRAPH_API_BASE}/me/accounts",
                 params={
-                    "fields": "id,name,instagram_business_account{id,username}",
+                    "fields": INSTAGRAM_PAGE_LOOKUP_FIELDS,
                     "access_token": access_token,
                 },
             )
@@ -206,7 +210,8 @@ class InstagramProvider(PlatformProvider):
 
     def validate_post_payload(self, payload: PublishPayload) -> list[str]:
         errors = []
-        if payload.caption and len(payload.caption) > 2200:
+        caption = self._caption_for_payload(payload, truncate=False)
+        if caption and len(caption) > 2200:
             errors.append("Instagram caption must be 2200 characters or fewer.")
         if len(payload.hashtags) > 30:
             errors.append(f"Instagram allows max 30 hashtags (got {len(payload.hashtags)}).")
@@ -318,11 +323,13 @@ class InstagramProvider(PlatformProvider):
         )
 
     @staticmethod
-    def _caption_for_payload(payload: PublishPayload) -> str:
-        caption = payload.caption or ""
+    def _caption_for_payload(payload: PublishPayload, *, truncate: bool = True) -> str:
+        # Instagram Reels do not expose a separate title field in the publishing API.
+        # Use the ReelPush title as a caption fallback so title-only posts still carry text.
+        caption = (payload.caption or payload.title or "").strip()
         if payload.hashtags:
-            caption += " " + " ".join(f"#{t}" for t in payload.hashtags)
-        return caption.strip()[:2200]
+            caption = f"{caption} {' '.join(f'#{t}' for t in payload.hashtags)}".strip()
+        return caption[:2200] if truncate else caption
 
     async def _resolve_instagram_user_id(
         self,
@@ -330,10 +337,15 @@ class InstagramProvider(PlatformProvider):
         account: PlatformAccount,
         access_token: str,
     ) -> str:
+        extra = account.extra_data if isinstance(account.extra_data, dict) else {}
+        stored_instagram_id = extra.get("instagram_user_id") or account.platform_user_id
+        if stored_instagram_id:
+            return stored_instagram_id
+
         resp = await client.get(
             f"{GRAPH_API_BASE}/me/accounts",
             params={
-                "fields": "id,name,instagram_business_account{id,username}",
+                "fields": INSTAGRAM_PAGE_LOOKUP_FIELDS,
                 "access_token": access_token,
             },
         )

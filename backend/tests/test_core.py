@@ -187,6 +187,8 @@ async def test_youtube_publish_sends_post_metadata(monkeypatch, tmp_path):
 async def test_instagram_exchange_code_uses_linked_instagram_account(monkeypatch):
     from app.providers import instagram
 
+    account_field_requests = []
+
     class FakeResponse:
         def __init__(self, json_data):
             self._json_data = json_data
@@ -213,6 +215,7 @@ async def test_instagram_exchange_code_uses_linked_instagram_account(monkeypatch
             if url.endswith("/me"):
                 return FakeResponse({"id": "fb-user", "name": "Facebook User"})
             if url.endswith("/me/accounts"):
+                account_field_requests.append(params.get("fields"))
                 return FakeResponse(
                     {
                         "data": [
@@ -237,6 +240,18 @@ async def test_instagram_exchange_code_uses_linked_instagram_account(monkeypatch
     assert tokens.platform_username == "ig_user"
     assert tokens.extra_data["instagram_user_id"] == "ig-123"
     assert tokens.extra_data["facebook_page_id"] == "page-1"
+    assert account_field_requests == ["id,name,instagram_business_account{id}"]
+
+
+def test_instagram_caption_uses_title_when_caption_is_empty():
+    payload = _make_payload(
+        video_path="https://media.example.com/uploads/clip.mp4",
+        title="Launch title",
+        caption="",
+        hashtags=["one", "two"],
+    )
+
+    assert InstagramProvider()._caption_for_payload(payload) == "Launch title #one #two"
 
 
 @pytest.mark.asyncio

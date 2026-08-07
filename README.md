@@ -57,6 +57,7 @@ cp .env.example .env
 | `TIKTOK_CLIENT_SECRET` | TikTok developer app client secret |
 | `INSTAGRAM_APP_ID` | Meta/Instagram app ID |
 | `INSTAGRAM_APP_SECRET` | Meta/Instagram app secret |
+| `META_GRAPH_API_VERSION` | Meta Graph API version for Instagram OAuth/publishing, e.g. `v21.0`. Keep this on a supported version from the Meta Developer dashboard/API Upgrade Tool. |
 | `YOUTUBE_CLIENT_ID` | Google OAuth2 client ID |
 | `YOUTUBE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `ADMIN_EMAIL` | Initial admin account email |
@@ -202,6 +203,8 @@ Token refresh is handled automatically before each publish job.
 - App must be approved for `instagram_basic`, `instagram_content_publish`, `pages_read_engagement`
 - Requires a Facebook Page linked to the Instagram Business/Creator account
 - Set `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET` once approved
+- Set `META_GRAPH_API_VERSION` to a supported Meta Graph API version and redeploy the backend after changing it
+- Register the exact redirect URI for the server the desktop app uses: `{API_URL}/api/oauth/instagram/callback`. Avoid ephemeral tunnel URLs for production because a changed host breaks OAuth until Meta is updated.
 
 ### YouTube
 - Create a project in Google Cloud Console at https://console.cloud.google.com
