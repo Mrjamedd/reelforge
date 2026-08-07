@@ -15,7 +15,6 @@ import uuid
 from datetime import datetime, timezone
 
 from celery import Task
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from app.core.logging import get_logger
 from app.models.models import JobStatus, Platform, PlatformAccount, PublishJob
@@ -50,10 +49,10 @@ def run_publish_job(self: Task, job_id: str) -> dict:
       5. Publish (or schedule natively if supported)
       6. Record result and update audit log
     """
-    return _run_async(_execute_publish_job(self, job_id))
+    return _run_async(execute_publish_job(job_id, task=self))
 
 
-async def _execute_publish_job(task: Task, job_id: str) -> dict:
+async def execute_publish_job(job_id: str, task: Task | None = None) -> dict:
     from app.db.session import AsyncSessionLocal
     from app.providers.registry import get_provider
     from app.services.media_service import MediaService
@@ -99,8 +98,13 @@ async def _execute_publish_job(task: Task, job_id: str) -> dict:
 
             # Build normalized payload
             hashtags = [h.strip() for h in (job.hashtags or "").split(",") if h.strip()]
+            if job.platform == Platform.INSTAGRAM:
+                video_path = await media_svc.get_instagram_public_url(upload.storage_key)
+            else:
+                video_path = await media_svc.get_public_url(upload.storage_key)
             payload = PublishPayload(
-                video_path=await media_svc.get_public_url(upload.storage_key),
+                video_path=video_path,
+                local_video_path=str(media_svc.get_local_path(upload.storage_key)),
                 title=job.title,
                 caption=job.caption,
                 hashtags=hashtags,
@@ -118,8 +122,7 @@ async def _execute_publish_job(task: Task, job_id: str) -> dict:
                 return {"success": False, "validation_errors": errors}
 
             # ── Upload video ───────────────────────────────────────────────
-            local_video_path = str(media_svc.get_local_path(upload.storage_key))
-            upload_id = await provider.create_upload(account, local_video_path)
+            upload_id = await provider.create_upload(account, payload.video_path, payload)
 
             # ── Publish or Schedule ────────────────────────────────────────
             await publish_svc.transition_status(
@@ -138,6 +141,13 @@ async def _execute_publish_job(task: Task, job_id: str) -> dict:
 
             # ── Record result ──────────────────────────────────────────────
             if result.success:
+                await oauth_svc.mark_credential_health(
+                    db,
+                    account,
+                    "verified",
+                    f"{provider.platform_name} publish completed successfully.",
+                    source="publish",
+                )
                 job.platform_post_id = result.platform_post_id
                 job.platform_post_url = result.platform_post_url
 
@@ -162,6 +172,14 @@ async def _execute_publish_job(task: Task, job_id: str) -> dict:
                     post_id=result.platform_post_id,
                 )
             else:
+                if oauth_svc.is_credential_failure(result.error_message or "", result.raw_response):
+                    await oauth_svc.mark_credential_health(
+                        db,
+                        account,
+                        "invalid",
+                        oauth_svc.describe_credential_failure(result.error_message or "Platform API error", result.raw_response),
+                        source="publish",
+                    )
                 await publish_svc.transition_status(
                     db, job, JobStatus.FAILED,
                     f"Platform API error: {result.error_message}",
@@ -180,13 +198,22 @@ async def _execute_publish_job(task: Task, job_id: str) -> dict:
         except Exception as exc:
             # Unexpected error — mark failed and maybe retry
             logger.exception("publish_job_exception", job_id=job_id, error=str(exc))
+            auth_problem = oauth_svc.is_credential_failure(exc)
+            if auth_problem and "account" in locals() and account:
+                await oauth_svc.mark_credential_health(
+                    db,
+                    account,
+                    "invalid",
+                    oauth_svc.describe_credential_failure(exc),
+                    source="publish",
+                )
             await publish_svc.transition_status(
                 db, job, JobStatus.FAILED, f"Unexpected error: {str(exc)[:500]}"
             )
             await db.commit()
 
             # Retry with exponential backoff if we haven't hit max attempts
-            if job.attempt_count < job.max_attempts:
+            if task is not None and job.attempt_count < job.max_attempts and not auth_problem:
                 delay = 60 * (2 ** (job.attempt_count - 1))  # 60s, 120s, 240s
                 raise task.retry(exc=exc, countdown=delay)
 

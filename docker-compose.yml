@@ -1,26 +1,20 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: reelforge
-      POSTGRES_PASSWORD: reelforge
-      POSTGRES_DB: reelforge
+      POSTGRES_USER: reelpush
+      POSTGRES_PASSWORD: reelpush
+      POSTGRES_DB: reelpush
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reelforge"]
+      test: ["CMD-SHELL", "pg_isready -U reelpush"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -32,11 +26,18 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      API_URL: http://localhost:8100
+      DATABASE_URL: postgresql+asyncpg://reelpush:reelpush@db:5432/reelpush
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOCAL_STORAGE_PATH: /storage
     volumes:
       - ./backend:/app
       - ./storage:/storage
     ports:
-      - "8000:8000"
+      - "8100:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +50,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      API_URL: http://localhost:8100
+      DATABASE_URL: postgresql+asyncpg://reelpush:reelpush@db:5432/reelpush
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOCAL_STORAGE_PATH: /storage
     volumes:
       - ./backend:/app
       - ./storage:/storage
@@ -64,6 +72,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      API_URL: http://localhost:8100
+      DATABASE_URL: postgresql+asyncpg://reelpush:reelpush@db:5432/reelpush
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOCAL_STORAGE_PATH: /storage
     volumes:
       - ./backend:/app
     depends_on:
@@ -72,21 +87,6 @@ services:
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    env_file: .env
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    environment:
-      - VITE_API_URL=http://localhost:8000
 
 volumes:
   postgres_data:

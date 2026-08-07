@@ -13,13 +13,16 @@ from app.core.config import get_settings
 settings = get_settings()
 
 celery_app = Celery(
-    "reelforge",
+    "reelpush",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
     include=["app.workers.tasks"],
 )
 
 celery_app.conf.update(
+    # Broker
+    broker_connection_retry_on_startup=True,
+
     # Serialization
     task_serializer="json",
     accept_content=["json"],

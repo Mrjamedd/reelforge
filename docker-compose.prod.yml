@@ -1,0 +1,108 @@
+# Production compose for OCI Always Free
+# Build: docker compose -f docker-compose.prod.yml build
+# Start: docker compose -f docker-compose.prod.yml up -d
+# Logs:  docker compose -f docker-compose.prod.yml logs -f
+# Stop:  docker compose -f docker-compose.prod.yml down
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    mem_limit: ${DB_MEM_LIMIT:-128m}
+    environment:
+      POSTGRES_USER: reelpush
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: reelpush
+    command: >
+      postgres
+      -c shared_buffers=48MB
+      -c max_connections=20
+      -c work_mem=2MB
+      -c maintenance_work_mem=24MB
+      -c effective_cache_size=96MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=4MB
+      -c log_min_duration_statement=2000
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reelpush"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    mem_limit: ${REDIS_MEM_LIMIT:-48m}
+    command: >
+      redis-server
+      --maxmemory 50mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    mem_limit: 32m
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: reelpush-backend:latest
+    restart: unless-stopped
+    mem_limit: ${BACKEND_MEM_LIMIT:-256m}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reelpush:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/reelpush
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOCAL_STORAGE_PATH: /storage
+      ENVIRONMENT: production
+    volumes:
+      - ./storage:/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+  worker:
+    image: reelpush-backend:latest
+    restart: unless-stopped
+    mem_limit: ${WORKER_MEM_LIMIT:-192m}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reelpush:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/reelpush
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOCAL_STORAGE_PATH: /storage
+      ENVIRONMENT: production
+    volumes:
+      - ./storage:/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Combined worker+beat — safe for single-worker deployments
+    command: celery -A app.workers.celery_app worker --beat --loglevel=warning --concurrency=1 -Q publish,scheduler
+
+volumes:
+  postgres_data:

@@ -23,12 +23,14 @@ SCHEDULING:
   Video must be set to "private" and scheduledStartTime to schedule publishing.
 """
 
+import mimetypes
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import get_effective_cred, get_settings
 from app.core.logging import get_logger
 from app.core.security import decrypt_token
 from app.models.models import PlatformAccount
@@ -53,6 +55,7 @@ YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 REQUIRED_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
 
@@ -64,7 +67,7 @@ class YouTubeProvider(PlatformProvider):
 
     @property
     def is_configured(self) -> bool:
-        return settings.youtube_configured
+        return bool(get_effective_cred("youtube_client_id") and get_effective_cred("youtube_client_secret"))
 
     @property
     def requires_app_review(self) -> bool:
@@ -72,11 +75,15 @@ class YouTubeProvider(PlatformProvider):
         # Test accounts work without verification
         return False  # No special review beyond Google OAuth app verification
 
+    @property
+    def supports_post_delete_test(self) -> bool:
+        return True
+
     # ─── OAuth ────────────────────────────────────────────────────────────────
 
     def get_auth_url(self, redirect_uri: str, state: str) -> OAuthConfig:
         params = {
-            "client_id": settings.youtube_client_id,
+            "client_id": get_effective_cred("youtube_client_id"),
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": " ".join(REQUIRED_SCOPES),
@@ -93,8 +100,8 @@ class YouTubeProvider(PlatformProvider):
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
-                    "client_id": settings.youtube_client_id,
-                    "client_secret": settings.youtube_client_secret,
+                    "client_id": get_effective_cred("youtube_client_id"),
+                    "client_secret": get_effective_cred("youtube_client_secret"),
                     "code": code,
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri,
@@ -132,8 +139,8 @@ class YouTubeProvider(PlatformProvider):
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
-                    "client_id": settings.youtube_client_id,
-                    "client_secret": settings.youtube_client_secret,
+                    "client_id": get_effective_cred("youtube_client_id"),
+                    "client_secret": get_effective_cred("youtube_client_secret"),
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
                 },
@@ -165,49 +172,34 @@ class YouTubeProvider(PlatformProvider):
 
     # ─── Publishing ───────────────────────────────────────────────────────────
 
-    async def create_upload(self, account: PlatformAccount, video_path: str) -> str:
+    async def create_upload(
+        self,
+        account: PlatformAccount,
+        video_path: str,
+        payload: PublishPayload | None = None,
+    ) -> str:
         """
-        Initiate a resumable upload session with YouTube Data API v3.
-        Returns the upload session URI.
+        YouTube upload is handled inline in publish_now() because it needs the
+        final metadata payload at session creation time.
         """
-        access_token = decrypt_token(account.access_token_encrypted)
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                YOUTUBE_UPLOAD_URL,
-                params={"uploadType": "resumable", "part": "snippet,status"},
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json; charset=UTF-8",
-                    "X-Upload-Content-Type": "video/*",
-                },
-                json={
-                    "snippet": {"title": "Upload in progress"},
-                    "status": {"privacyStatus": "private"},
-                },
-            )
-            resp.raise_for_status()
-
-        # YouTube returns the upload URI in the Location header
-        upload_uri = resp.headers.get("Location", "")
-        logger.info("youtube_upload_session_created", upload_uri=upload_uri[:60])
-        return upload_uri
+        return "INLINE"
 
     async def publish_now(
         self,
         account: PlatformAccount,
         upload_id: str,
         payload: PublishPayload,
-        video_bytes: bytes | None = None,
     ) -> PublishResult:
         """
-        Upload video bytes to YouTube's resumable upload URI, then update metadata.
-        `upload_id` is the upload session URI from create_upload().
-
-        NOTE: For large files this should be chunked. Simplified here for clarity.
-        TODO: Implement chunked upload for production.
+        Upload the video via YouTube's resumable upload flow and return the new video ID.
         """
         access_token = decrypt_token(account.access_token_encrypted)
+        source = await self._load_video_source(payload)
+        if not source:
+            return PublishResult(
+                success=False,
+                error_message="Could not load the video file for YouTube upload.",
+            )
 
         privacy_map = {
             "public": "public",
@@ -220,49 +212,77 @@ class YouTubeProvider(PlatformProvider):
         if payload.hashtags:
             description += "\n\n" + " ".join(f"#{t}" for t in payload.hashtags)
 
-        # For the scaffold: we update video metadata after upload
-        # In production, the actual bytes are PUT to upload_id (the resumable URI)
         async with httpx.AsyncClient(timeout=300) as client:
-            # TODO: In production, PUT video bytes to upload_id URI first
-            # Then update metadata with a separate PATCH call
+            metadata = {
+                "snippet": {
+                    "title": (payload.title or source["filename"])[:100],
+                    "description": description[:5000],
+                    "categoryId": "22",
+                },
+                "status": {
+                    "privacyStatus": yt_privacy,
+                    "selfDeclaredMadeForKids": False,
+                },
+            }
+            if payload.hashtags:
+                metadata["snippet"]["tags"] = payload.hashtags[:500]
+            if payload.scheduled_for:
+                metadata["status"]["privacyStatus"] = "private"
+                metadata["status"]["publishAt"] = payload.scheduled_for.astimezone(
+                    timezone.utc
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            # Update video metadata
-            update_resp = await client.put(
-                YOUTUBE_VIDEOS_URL,
-                params={"part": "snippet,status"},
+            init_resp = await client.post(
+                YOUTUBE_UPLOAD_URL,
+                params={"uploadType": "resumable", "part": "snippet,status"},
                 headers={
                     "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
+                    "Content-Type": "application/json; charset=UTF-8",
+                    "X-Upload-Content-Type": source["content_type"],
+                    "X-Upload-Content-Length": str(source["content_length"]),
                 },
-                json={
-                    "id": upload_id,  # video ID (after upload completes)
-                    "snippet": {
-                        "title": (payload.title or "")[:100],
-                        "description": description[:5000],
-                        "categoryId": "22",  # People & Blogs; adjust as needed
-                    },
-                    "status": {
-                        "privacyStatus": yt_privacy,
-                        "selfDeclaredMadeForKids": False,
-                    },
+                json=metadata,
+            )
+            init_resp.raise_for_status()
+
+            upload_url = init_resp.headers.get("Location")
+            if not upload_url:
+                return PublishResult(
+                    success=False,
+                    error_message="YouTube upload session did not return a resumable location.",
+                )
+
+            upload_resp = await client.put(
+                upload_url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": source["content_type"],
+                    "Content-Length": str(source["content_length"]),
                 },
+                content=source["content"],
             )
 
-        if update_resp.status_code in (200, 201):
-            data = update_resp.json()
-            video_id = data.get("id", upload_id)
+        if upload_resp.status_code in (200, 201):
+            data = upload_resp.json()
+            video_id = data.get("id")
+            if not video_id:
+                return PublishResult(
+                    success=False,
+                    error_message="YouTube upload completed without returning a video ID.",
+                    raw_response=data,
+                )
             logger.info("youtube_published", video_id=video_id)
             return PublishResult(
                 success=True,
                 platform_post_id=video_id,
-                platform_post_url=f"https://www.youtube.com/shorts/{video_id}",
+                platform_post_url=f"https://www.youtube.com/watch?v={video_id}",
                 raw_response=data,
             )
 
-        logger.error("youtube_publish_failed", status=update_resp.status_code)
+        logger.error("youtube_publish_failed", status=upload_resp.status_code)
         return PublishResult(
             success=False,
-            error_message=f"YouTube API error {update_resp.status_code}: {update_resp.text}",
+            error_message=f"YouTube API error {upload_resp.status_code}: {upload_resp.text}",
         )
 
     async def schedule_publish(
@@ -271,42 +291,7 @@ class YouTubeProvider(PlatformProvider):
         upload_id: str,
         payload: PublishPayload,
     ) -> PublishResult:
-        """
-        YouTube natively supports scheduling via publishAt.
-        Upload as private then set scheduledStartTime.
-        """
-        if not payload.scheduled_for:
-            return await self.publish_now(account, upload_id, payload)
-
-        access_token = decrypt_token(account.access_token_encrypted)
-        scheduled_str = payload.scheduled_for.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.put(
-                YOUTUBE_VIDEOS_URL,
-                params={"part": "status"},
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "id": upload_id,
-                    "status": {
-                        "privacyStatus": "private",
-                        "publishAt": scheduled_str,
-                    },
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        video_id = data.get("id", upload_id)
-        return PublishResult(
-            success=True,
-            platform_post_id=video_id,
-            platform_post_url=f"https://www.youtube.com/shorts/{video_id}",
-            raw_response=data,
-        )
+        return await self.publish_now(account, upload_id, payload)
 
     async def get_post_status(
         self,
@@ -341,3 +326,57 @@ class YouTubeProvider(PlatformProvider):
             like_count=int(stats["likeCount"]) if "likeCount" in stats else None,
             raw_response=data,
         )
+
+    async def delete_post(
+        self,
+        account: PlatformAccount,
+        platform_post_id: str,
+    ) -> None:
+        access_token = decrypt_token(account.access_token_encrypted)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.delete(
+                YOUTUBE_VIDEOS_URL,
+                params={"id": platform_post_id},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if resp.status_code == 204:
+                logger.info("youtube_deleted", video_id=platform_post_id)
+                return
+            resp.raise_for_status()
+
+    async def _load_video_source(self, payload: PublishPayload) -> dict | None:
+        local_path = Path(payload.local_video_path) if payload.local_video_path else None
+        if local_path and local_path.is_file():
+            content = local_path.read_bytes()
+            return {
+                "content": content,
+                "content_length": len(content),
+                "content_type": mimetypes.guess_type(local_path.name)[0] or "video/mp4",
+                "filename": local_path.stem,
+            }
+
+        source_ref = payload.video_path.strip()
+        if source_ref.startswith(("http://", "https://")):
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.get(source_ref)
+                resp.raise_for_status()
+                content_type = resp.headers.get("content-type", "video/mp4").split(";", 1)[0]
+                filename = Path(source_ref.split("?", 1)[0]).stem or "upload"
+                return {
+                    "content": resp.content,
+                    "content_length": len(resp.content),
+                    "content_type": content_type,
+                    "filename": filename,
+                }
+
+        file_path = Path(source_ref)
+        if file_path.is_file():
+            content = file_path.read_bytes()
+            return {
+                "content": content,
+                "content_length": len(content),
+                "content_type": mimetypes.guess_type(file_path.name)[0] or "video/mp4",
+                "filename": file_path.stem,
+            }
+
+        return None
